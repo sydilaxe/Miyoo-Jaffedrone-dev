@@ -323,3 +323,20 @@ The audio thread only fills counters; all writing happens in the main thread.
   - Wi-Fi sync;
   - DSP load.
 - `make install SD=/path/to/card` copies the app into `App/`.
+- `make package CROSS=/opt/miyoomini-toolchain/usr/bin/arm-linux-gnueabihf-` builds with the OnionOS gcc
+  toolchain instead of zig (in the `aemiii91/miyoomini-toolchain` container) and writes
+  `build/Jaffedrone-miyoo.zip`, laid out to unzip at the root of the SD card.
+
+### GitHub builds and releases
+
+Every push runs the **build** workflow:
+
+- It builds the Miyoo package in the OnionOS toolchain container. The zip is kept as the run's
+  `Jaffedrone-miyoo` artifact.
+- It runs the test harness, checking that there is no clipping, every wind exciter is in tune, the chord
+  memory, key lock and presets work, and Wi-Fi sync locks. The output and screenshots are kept as
+  `test-output`.
+
+To publish a release with the zip attached, go to **Actions → build → Run workflow** and fill in a tag such as
+`v0.5.0`. Pushing a `v*` tag, or creating a release on the website, does the same. The release text comes from
+`.github/release-notes.md`.

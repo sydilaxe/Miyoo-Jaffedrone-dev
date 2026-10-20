@@ -1,0 +1,88 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Publish a GitHub release with this tag (e.g. v0.5.0). Leave empty to just build."
+        required: false
+        default: ""
+
+jobs:
+  miyoo:
+    name: Miyoo Mini Plus package
+    runs-on: ubuntu-latest
+    container: aemiii91/miyoomini-toolchain:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: |
+          # generated files are committed; keep make from regenerating them
+          touch src/font_data.h dist/Jaffedrone/icon.png
+          command -v zip >/dev/null || (apt-get update && apt-get install -y zip)
+          make package CROSS=/opt/miyoomini-toolchain/usr/bin/arm-linux-gnueabihf-
+          ls -l build/Jaffedrone-miyoo.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Jaffedrone-miyoo
+          path: build/Jaffedrone-miyoo.zip
+
+  test:
+    name: Engine and UI tests (host)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run the test harness
+        run: |
+          touch src/font_data.h dist/Jaffedrone/icon.png
+          make build/jd_test
+          mkdir -p build/test
+          build/jd_test build/test | tee build/test/results.txt
+      - name: Check the results
+        run: |
+          r=build/test/results.txt
+          grep -q "0 full-scale samples (want 0)" $r
+          # every wind exciter in tune in every material
+          test "$(grep -c '^wind .*12/12 in tune' $r)" -eq 7
+          grep -q "matched the memory 8/8" $r
+          grep -q "notes outside the mode 0, detuned notes 0" $r
+          grep -q "presets: saved YAMAN, changed to .*, loaded back -> YAMAN" $r
+          grep -q "sync: bpm=128.0 peers=1 leader=1" $r
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-output
+          path: build/test/
+
+  release:
+    name: Publish release
+    # runs for: a pushed v* tag, a release created on the website, or a manual run with a tag filled in
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'release' || inputs.release_tag != ''
+    needs: [miyoo, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: Jaffedrone-miyoo
+      - name: Create GitHub release with the Miyoo package
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release_tag || github.event.release.tag_name || github.ref_name }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" Jaffedrone-miyoo.zip --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" Jaffedrone-miyoo.zip \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "Jaffedrone $TAG (test build)" \
+              --notes-file .github/release-notes.md \
+              --prerelease
+          fi

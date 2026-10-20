@@ -4,6 +4,8 @@
 #   make test     build the host harness and render screenshots + audio into build/test
 #   make zip      package dist/Jaffedrone as build/Jaffedrone.zip for copying to SD:/App/
 #   make install SD=/run/media/$USER/<card>   copy the app onto a mounted SD card
+#   make package CROSS=<prefix>   build with the OnionOS gcc toolchain (no zig) and zip it as
+#                 build/Jaffedrone-miyoo.zip, laid out to unzip at the root of the SD card (CI does this)
 
 ZIG    ?= $(HOME)/.local/opt/zig-aarch64-linux-0.14.1/zig
 TARGET := arm-linux-gnueabihf.2.28
@@ -24,8 +26,10 @@ $(APP)/icon.png: tools/mkicon.py
 	python3 tools/mkicon.py $@
 
 # Onion's MI_AO/MI_GFX-backed SDL 1.2 (LGPL), linked against but not committed
+SDL_URL := https://raw.githubusercontent.com/OnionUI/Onion/main/static/build/.tmp_update/lib/parasyte/libSDL-1.2.so.0
 $(SDL_LIB):
-	curl -sSL --create-dirs -o $@ https://raw.githubusercontent.com/OnionUI/Onion/main/static/build/.tmp_update/lib/parasyte/libSDL-1.2.so.0
+	mkdir -p $(dir $@)
+	curl -sSL -o $@ $(SDL_URL) || wget -qO $@ $(SDL_URL) || (rm -f $@; false)
 
 $(APP)/jaffedrone: $(SRC) src/main_sdl.c $(HDR) $(SDL_LIB)
 	$(ZIG) cc -target $(TARGET) -mcpu=cortex_a7 $(CFLAGS) -I$(SDL_INC) -o $@ \
@@ -61,3 +65,21 @@ clean:
 build/jd_synctest: $(SRC) src/main_synctest.c $(HDR)
 	@mkdir -p build
 	cc $(CFLAGS) -o $@ $(SRC) src/main_synctest.c -lm
+
+# the OnionOS toolchain's gcc instead of zig, e.g. in the aemiii91/miyoomini-toolchain container:
+#   make package CROSS=/opt/miyoomini-toolchain/usr/bin/arm-linux-gnueabihf-
+CROSS ?= arm-linux-gnueabihf-
+miyoo: $(SRC) src/main_sdl.c $(HDR) $(SDL_LIB)
+	$(CROSS)gcc -marm -mcpu=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard $(CFLAGS) -I$(SDL_INC) -o $(APP)/jaffedrone \
+		$(SRC) src/main_sdl.c $(SDL_LIB) -lm -lpthread -Wl,--allow-shlib-undefined -s
+
+package: miyoo
+	rm -rf build/sd build/Jaffedrone-miyoo.zip
+	mkdir -p build/sd/App
+	cp -r $(APP) build/sd/App/
+	rm -f build/sd/App/Jaffedrone/*.sav* build/sd/App/Jaffedrone/*.jds build/sd/App/Jaffedrone/log.txt \
+		build/sd/App/Jaffedrone/jaffedrone_log.txt* build/sd/App/Jaffedrone/jaffedrone.cfg
+	chmod +x build/sd/App/Jaffedrone/launch.sh build/sd/App/Jaffedrone/jaffedrone
+	cd build/sd && zip -qr ../Jaffedrone-miyoo.zip App
+
+.PHONY: miyoo package
