@@ -2,6 +2,7 @@
  * rooflines, chamfered angular masses, cedar and sandstone against slate,
  * one copper edge catching the light. */
 #include "ui.h"
+#include "logo_data.h"
 
 #include <math.h>
 #include <stdarg.h>
@@ -844,13 +845,31 @@ static void draw_string(int x0, int x1, int y, float amp, float ph, uint32_t col
 
 /* ---------------------------------------------------------------- pages */
 
+/* the wordmark: hand-cut hollow letters (tools/mklogo.py), h pixels high,
+ * a faint fill under a pencil-like outline */
+static void draw_logo(float x, float y, float h, float stroke, uint32_t col, uint32_t fill)
+{
+    float k = h / LOGO_H, xy[2 * 64];
+    for (int l = 0; l < LOGO_NLETTER; l++) {
+        int a = logo_start[l], n = logo_start[l + 1] - a;
+        for (int i = 0; i < n && i < 64; i++)
+            xy[2 * i] = x + logo_pt[a + i][0] * k, xy[2 * i + 1] = y + logo_pt[a + i][1] * k;
+        n = n < 64 ? n : 64;
+        if (fill != col)
+            gfx_poly(xy, n, fill);
+        for (int i = 0, j = n - 1; i < n; j = i++)
+            gfx_line(xy[2 * j], xy[2 * j + 1], xy[2 * i], xy[2 * i + 1], stroke, col);
+    }
+    gfx_disc(x + LOGO_EYE_X * k, y + LOGO_EYE_Y * k, fmaxf(1.f, stroke * 0.9f), col); /* the P's eye */
+}
+
 static void draw_header(void)
 {
     gfx_fill(0, 0, SCREEN_W, HEADER_H, C_PANEL);
     /* the roofline: one copper edge across the band */
     slant(150, HEADER_H - 3, SCREEN_W, HEADER_H - 16, 3, C_COPPER);
-    gfx_text(10, 4, "JAFFEDRONE", C_SAND, FONT_LARGE);
-    int x = 172;
+    draw_logo(7, 6, 32, 1.5f, C_SAND, gfx_mix(C_PANEL, C_SAND, 0.10f));
+    int x = 182;
     for (int p = 0; p < PAGE_COUNT; p++) {
         int w = gfx_text_w(page_names[p], FONT_SMALL) + 12;
         para(x, 10, w, 24, 6, p == page ? C_COPPER : C_PANEL2);

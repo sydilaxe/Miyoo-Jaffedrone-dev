@@ -14,6 +14,8 @@ void gfx_fill_a(int x, int y, int w, int h, uint32_t c, int alpha);
 void gfx_rect(int x, int y, int w, int h, int t, uint32_t c);
 void gfx_disc(float cx, float cy, float r, uint32_t c);
 void gfx_ring(float cx, float cy, float r, float t, uint32_t c);
+void gfx_line(float x0, float y0, float x1, float y1, float t, uint32_t c); /* anti-aliased, t wide */
+void gfx_poly(const float *xy, int n, uint32_t c); /* filled, even-odd */
 void gfx_tri(float x0, float y0, float x1, float y1, float x2, float y2, uint32_t c);
 int gfx_text(int x, int y, const char *s, uint32_t c, int font);
 int gfx_text_w(const char *s, int font);

@@ -163,3 +163,58 @@ void gfx_tri(float x0, float y0, float x1, float y1, float x2, float y2, uint32_
         gfx_fill((int)xa, y, (int)(xb - xa) + 1, 1, c);
     }
 }
+
+void gfx_line(float x0, float y0, float x1, float y1, float t, uint32_t c)
+{
+    float r = t * 0.5f, dx = x1 - x0, dy = y1 - y0, ll = dx * dx + dy * dy;
+    int bx0 = (int)floorf(fminf(x0, x1) - r - 1), bx1 = (int)ceilf(fmaxf(x0, x1) + r + 1);
+    int by0 = (int)floorf(fminf(y0, y1) - r - 1), by1 = (int)ceilf(fmaxf(y0, y1) + r + 1);
+    if (bx0 < 0) bx0 = 0;
+    if (by0 < 0) by0 = 0;
+    if (bx1 > SCREEN_W) bx1 = SCREEN_W;
+    if (by1 > SCREEN_H) by1 = SCREEN_H;
+    for (int y = by0; y < by1; y++)
+        for (int x = bx0; x < bx1; x++) {
+            /* coverage from the distance to the segment: a capsule */
+            float px = x + .5f - x0, py = y + .5f - y0;
+            float u = ll > 0.f ? (px * dx + py * dy) / ll : 0.f;
+            u = u < 0.f ? 0.f : u > 1.f ? 1.f : u;
+            float ex = px - u * dx, ey = py - u * dy;
+            float a = r + .5f - sqrtf(ex * ex + ey * ey);
+            if (a <= 0.f)
+                continue;
+            uint32_t *q = fb + y * SCREEN_W + x;
+            int ai = a >= 1.f ? 255 : (int)(a * 255.f);
+            *q = blend(*q, c, ai);
+        }
+}
+
+void gfx_poly(const float *xy, int n, uint32_t c)
+{
+    float ymin = 1e9f, ymax = -1e9f;
+    for (int i = 0; i < n; i++)
+        ymin = fminf(ymin, xy[2 * i + 1]), ymax = fmaxf(ymax, xy[2 * i + 1]);
+    int y0 = (int)ceilf(ymin - .5f), y1 = (int)floorf(ymax - .5f);
+    if (y0 < 0) y0 = 0;
+    if (y1 >= SCREEN_H) y1 = SCREEN_H - 1;
+    for (int y = y0; y <= y1; y++) {
+        float yc = y + .5f, xs[64];
+        int k = 0;
+        for (int i = 0, j = n - 1; i < n; j = i++) {
+            float ya = xy[2 * j + 1], yb = xy[2 * i + 1];
+            if ((ya <= yc) != (yb <= yc) && k < 64)
+                xs[k++] = xy[2 * j] + (yc - ya) / (yb - ya) * (xy[2 * i] - xy[2 * j]);
+        }
+        for (int a = 1; a < k; a++) /* few crossings: insertion sort */
+            for (int b = a; b > 0 && xs[b - 1] > xs[b]; b--) {
+                float tmp = xs[b];
+                xs[b] = xs[b - 1];
+                xs[b - 1] = tmp;
+            }
+        for (int a = 0; a + 1 < k; a += 2) {
+            int xa = (int)ceilf(xs[a] - .5f), xb = (int)floorf(xs[a + 1] - .5f);
+            if (xb >= xa)
+                gfx_fill(xa, y, xb - xa + 1, 1, c);
+        }
+    }
+}
