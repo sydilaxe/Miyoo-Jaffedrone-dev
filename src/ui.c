@@ -1385,8 +1385,8 @@ static void draw_quiet(void)
 }
 
 /* the start-up screen: the house's roofline (splash.jdi, from
- * tools/mksplash.py) with the wordmark on the siding below the valley, its
- * own two roofs answering the house's */
+ * tools/mksplash.py) with the wordmark large on the siding below the
+ * valley, its own two roofs answering the house's */
 static uint8_t *splash_px;
 static uint32_t splash_pal[256];
 static int splash_tried;
@@ -1421,8 +1421,9 @@ static void draw_splash(uint32_t *fb)
 {
     if (!splash_tried)
         splash_load();
-    float h = 66.f, k = h / LOGO_H;
-    float x = 346.f - LOGO_VALLEY_X * k, y = 290.f - LOGO_VALLEY_Y * k; /* its valley under the house's */
+    /* centred on the screen, and in the siding between the valley and the window */
+    float h = 86.f, k = h / LOGO_H;
+    float x = (SCREEN_W - LOGO_W * k) / 2, y = 256.f;
     if (splash_px)
         for (int i = 0; i < SCREEN_W * SCREEN_H; i++)
             fb[i] = splash_pal[splash_px[i]];
@@ -1434,7 +1435,7 @@ static void draw_splash(uint32_t *fb)
     draw_logo_a(x, y, h, 1.4f, C_SLATE, C_SLATE_D, 222); /* painted on the boards: they show faintly through */
     char v[24];
     snprintf(v, sizeof v, "v%s", JD_VERSION);
-    gfx_text((int)(x + LOGO_VALLEY_X * k) - gfx_text_w(v, FONT_SMALL) / 2, (int)(y + h + 18), v, C_SLATE, FONT_SMALL);
+    gfx_text((SCREEN_W - gfx_text_w(v, FONT_SMALL)) / 2, (int)(y + h + 16), v, C_SLATE, FONT_SMALL);
 }
 
 void ui_draw(uint32_t *fb)
