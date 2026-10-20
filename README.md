@@ -160,18 +160,24 @@ strings, beats between the ears at the same rate. Listen on headphones.
 
 **PLAY**
 
+The rings use the same buttons as HI5's pattern cells and RadioScan's rhythms. The strings are played by hand
+on the shoulder buttons.
+
 | Button | Action |
 |---|---|
 | Left / right | choose a string |
-| Up / down | choose the pluck ring / the bow ring; press again to switch that ring on or off |
-| X / Y | add / remove a pulse |
-| A (hold) | bow the string by hand |
-| B | pluck the string by hand |
-| L2 + X / Y | more / fewer steps |
-| L2 + left / right | rotate the pattern |
-| L2 + up / down | step length longer / shorter |
+| Up / down | choose the pluck ring / the bow ring |
+| A | switch the ring on / off |
+| B | fewer pulses, wrapping back to all |
+| X | rotate the pattern |
+| Y | a new simple pattern |
+| L1 | pluck the string by hand |
+| R1 (hold) | bow the string by hand |
+| L2 + up / down | more / fewer steps |
+| L2 + left / right | step length (right = faster) |
+| L2 + X | more pulses |
+| L2 + Y | rotate back |
 | L2 + A | mute / unmute the string (it fades out and in; a red bar marks it) |
-| L2 + B | a new simple pattern |
 | tap L2 | the quiet view |
 | R2 + left / right | previous / next scale |
 | R2 + up / down | tone (cutoff) |
@@ -183,8 +189,8 @@ strings, beats between the ears at the same rate. Listen on headphones.
 | Button | Action |
 |---|---|
 | SELECT | next chord |
-| START | start / stop the drone |
-| L1 / R1 | previous / next page |
+| START (tap) | start / stop the drone |
+| START + L1 / R1 | previous / next page (on SOUND, COMPOSE and MIX, L1 / R1 alone also work) |
 | MENU | exit |
 
 **On SOUND, COMPOSE and MIX:** the d-pad moves to the nearest control in that direction, and Y / X lowers or

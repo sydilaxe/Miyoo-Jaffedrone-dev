@@ -39,7 +39,8 @@ static int page, cur_s;
 static int ring;  /* PLAY: the selected ring of the selected string */
 static int quiet; /* PLAY: the quiet view, strings and rings only */
 static int l2_used, r2_used;
-static int bowing = -1; /* the string bowed by hand (A held) */
+static int bowing = -1; /* the string bowed by hand (R1 held) */
+static int start_used;  /* START took part in a page change */
 static int held[BTN_COUNT], hold_ms[BTN_COUNT], rep_ms[BTN_COUNT], rep_n[BTN_COUNT];
 static int quit, changed, now_ms, toast_ms;
 static char toast[48];
@@ -253,20 +254,17 @@ static void play_action(int b)
     int l2 = held[BTN_L2], r2 = held[BTN_R2];
     if (l2) {
         l2_used = 1;
+        /* as on RadioScan: steps and step length on the d-pad */
         switch (b) {
-        case BTN_X: ring_edit(1, +1); return;
-        case BTN_Y: ring_edit(1, -1); return;
-        case BTN_LEFT: ring_edit(3, -1); return;
-        case BTN_RIGHT: ring_edit(3, +1); return;
-        case BTN_UP: ring_edit(SP_RATE, +1); return;
-        case BTN_DOWN: ring_edit(SP_RATE, -1); return;
+        case BTN_UP: ring_edit(1, +1); return;
+        case BTN_DOWN: ring_edit(1, -1); return;
+        case BTN_RIGHT: ring_edit(SP_RATE, -1); return; /* right = faster */
+        case BTN_LEFT: ring_edit(SP_RATE, +1); return;
+        case BTN_X: ring_edit(2, +1); return; /* more pulses */
+        case BTN_Y: ring_edit(3, -1); return; /* rotate back */
         case BTN_A: /* mute or unmute the string (it fades) */
             song.on[cur_s] = !song.on[cur_s];
             say("STRING %d %s", cur_s + 1, song.on[cur_s] ? "ON" : "MUTED");
-            return;
-        case BTN_B:
-            engine_euclid_random(cur_s, ring);
-            ring_show();
             return;
         }
     }
@@ -288,40 +286,54 @@ static void play_action(int b)
         case BTN_B: song.fx[FX_BODY] = clampi(song.fx[FX_BODY] - 5, 0, 100); say("BODY %d", song.fx[FX_BODY]); return;
         }
     }
+    /* the rings play like HI5's pattern cells and RadioScan's rhythms:
+     * A on/off, B fewer pulses (wrapping back to all), X rotate, Y a new
+     * pattern; the d-pad picks the string and the ring */
+    int *P = song.sp[cur_s];
     switch (b) {
     case BTN_LEFT: cur_s = wrap(cur_s - 1, NS); break;
     case BTN_RIGHT: cur_s = wrap(cur_s + 1, NS); break;
-    case BTN_UP:   /* up: the pluck ring; up again switches it on or off */
-    case BTN_DOWN: /* down: the bow ring; down again switches it on or off */
-    {
-        int want = b == BTN_UP ? RING_PLUCK : RING_BOW;
-        if (ring == want) {
-            int *on = &song.sp[cur_s][RING_P(ring, 0)];
-            *on = !*on;
-        }
-        ring = want;
+    case BTN_UP: ring = RING_PLUCK; ring_show(); break;
+    case BTN_DOWN: ring = RING_BOW; ring_show(); break;
+    case BTN_A:
+        P[RING_P(ring, 0)] = !P[RING_P(ring, 0)];
+        ring_show();
+        break;
+    case BTN_B: {
+        int pu = P[RING_P(ring, 2)];
+        P[RING_P(ring, 2)] = pu > 1 ? pu - 1 : P[RING_P(ring, 1)];
+        P[RING_P(ring, 0)] = 1;
         ring_show();
         break;
     }
-    case BTN_X: ring_edit(2, +1); break;
-    case BTN_Y: ring_edit(2, -1); break;
-    case BTN_A: /* bow by hand while held */
-        bowing = cur_s;
-        engine_bow(cur_s, 1);
+    case BTN_X: ring_edit(3, +1); break;
+    case BTN_Y:
+        engine_euclid_random(cur_s, ring);
+        ring_show();
         break;
-    case BTN_B: engine_pluck(cur_s); break;
     }
 }
 
 static void action(int b, int repeats)
 {
     switch (b) {
-    case BTN_L1: page = wrap(page - 1, PAGE_COUNT); return;
-    case BTN_R1: page = wrap(page + 1, PAGE_COUNT); return;
-    case BTN_START:
-        engine_set_playing(!live.playing);
-        say("%s", live.playing ? "DRONE ON" : "DRONE OFF");
+    case BTN_L1:
+    case BTN_R1:
+        /* START + L1 / R1 changes page everywhere; L1 / R1 alone changes
+         * page on the edit pages, and plays the selected string on PLAY:
+         * L1 plucks, R1 bows while held */
+        if (held[BTN_START] || page != PAGE_PLAY) {
+            start_used |= held[BTN_START];
+            page = wrap(page + (b == BTN_R1 ? 1 : -1), PAGE_COUNT);
+        }
+        else if (b == BTN_L1)
+            engine_pluck(cur_s);
+        else {
+            bowing = cur_s;
+            engine_bow(cur_s, 1);
+        }
         return;
+    case BTN_START: return; /* acts on release, unless used for a page change */
     case BTN_SELECT:
         engine_next_chord();
         changed = 1;
@@ -383,11 +395,22 @@ void ui_button(int b, int down)
         quiet = !quiet;
         return;
     }
-    if (b == BTN_A && !down && bowing >= 0) {
+    if (b == BTN_R1 && !down && bowing >= 0) {
         ui_lock();
         engine_bow(bowing, 0);
         ui_unlock();
         bowing = -1;
+        return;
+    }
+    if (b == BTN_START) {
+        if (down)
+            start_used = 0;
+        else if (!start_used) { /* a plain tap: start or stop the drone */
+            ui_lock();
+            engine_set_playing(!live.playing);
+            ui_unlock();
+            say("%s", live.playing ? "DRONE ON" : "DRONE OFF");
+        }
         return;
     }
     if (down) {
@@ -558,14 +581,14 @@ static void draw_header(void)
 static void draw_footer(void)
 {
     static const char *const hints[PAGE_COUNT] = {
-        "A:BOW B:PLUCK ^v:RING ON/OFF X/Y:PULSES L2:EDIT R2:SOUND SEL:CHORD",
-        "D-PAD:MOVE Y:- X:+ A:MUTE B:PLUCK SEL:CHORD START:DRONE",
-        "D-PAD:MOVE Y:- X:+ B:PLUCK ALL SEL:NEXT CHORD START:DRONE",
-        "D-PAD:MOVE Y:- X:+ A:MUTE B:PLUCK SEL:CHORD START:DRONE",
+        "A:ON/OFF B:FEWER X:ROTATE Y:NEW L1:PLUCK R1:BOW L2:EDIT R2:SOUND",
+        "D-PAD:MOVE Y:- X:+ A:MUTE B:PLUCK L1/R1:PAGE SEL:CHORD",
+        "D-PAD:MOVE Y:- X:+ B:PLUCK ALL L1/R1:PAGE SEL:NEXT CHORD",
+        "D-PAD:MOVE Y:- X:+ A:MUTE B:PLUCK L1/R1:PAGE SEL:CHORD",
     };
     const char *h = hints[page];
     if (page == PAGE_PLAY && held[BTN_L2])
-        h = "L2+ A:MUTE STRING X/Y:STEPS <>:ROTATE ^v:RATE B:NEW RING";
+        h = "L2+ ^v:STEPS <>:RATE X:MORE PULSES Y:ROTATE BACK A:MUTE";
     else if (page == PAGE_PLAY && held[BTN_R2])
         h = "R2+ X/Y:RING CHANCE <>:SCALE ^v:TONE A/B:BODY";
     gfx_fill(0, FOOTER_Y, SCREEN_W, SCREEN_H - FOOTER_Y, C_PANEL);

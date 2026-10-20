@@ -62,6 +62,14 @@ static void press(int b)
     ui_button(b, 0);
 }
 
+/* START + R1: the next page */
+static void next_page(void)
+{
+    ui_button(BTN_START, 1);
+    press(BTN_R1);
+    ui_button(BTN_START, 0);
+}
+
 static double rms_of(const int16_t *pcm, int from, int n)
 {
     double r = 0;
@@ -113,7 +121,7 @@ int main(int argc, char **argv)
                 press(BTN_SELECT), press(BTN_SELECT);
         if (t >= 320 && t < 320 + PAGE_COUNT * 10 && (t - 320) % 10 == 0) {
             shot(out, pages[(t - 320) / 10], fb);
-            press(BTN_R1);
+            next_page();
         }
         if (t == 420) { /* back on PLAY: the quiet view, then hand-bow string 2 */
             press(BTN_L2);
@@ -123,13 +131,45 @@ int main(int argc, char **argv)
         if (t == 480) {
             press(BTN_L2);
             press(BTN_RIGHT);
-            ui_button(BTN_A, 1);
+            ui_button(BTN_R1, 1); /* bow string 2 by hand */
         }
         if (t == 560) {
             shot(out, "play_bow", fb);
-            ui_button(BTN_A, 0);
+            ui_button(BTN_R1, 0);
         }
     }
+    /* controls on PLAY, as on HI5 and RadioScan: A on/off, B fewer pulses
+     * (wrapping), X rotate, Y new pattern; START + R1 pages without stopping
+     * the drone; a plain START tap stops it; L1 plucks */
+    {
+        song_default();
+        engine_init(RATE);
+        engine_set_playing(1);
+        for (int i = 0; i < PAGE_COUNT; i++)
+            next_page(); /* all the way round, back to PLAY */
+        int playing_after_pages = live.playing;
+        press(BTN_LEFT); /* the screenshots above left string 2 selected */
+        int *P = song.sp[0];
+        press(BTN_UP); /* the pluck ring of string 1: E(1,4) */
+        int on0 = P[SP_PON];
+        press(BTN_A);
+        int on1 = P[SP_PON];
+        press(BTN_A);
+        press(BTN_B); /* 1 pulse -> wraps to 4 */
+        int wrapped = P[SP_PPULSES];
+        press(BTN_B);
+        int fewer = P[SP_PPULSES];
+        press(BTN_X);
+        int rot = P[SP_PROT];
+        press(BTN_L1);
+        engine_render(pcm, RATE / 100);
+        float m = live.meter[0];
+        press(BTN_START);
+        printf("controls: pages keep drone %d; A %d->%d; B wraps 1->%d then %d; X rotate ->%d; L1 pluck meter %.3f; START tap -> playing %d\n",
+               playing_after_pages, on0, on1, wrapped, fewer, rot, m, live.playing);
+        engine_set_playing(1);
+    }
+
     snprintf(path, sizeof path, "%s/drone.wav", out);
     write_wav(path, pcm, RATE * secs);
     printf("rms per second:");
