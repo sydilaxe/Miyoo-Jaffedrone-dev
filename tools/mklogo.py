@@ -67,8 +67,8 @@ def E(w):
 
 
 def D(w):
-    r = H / 2
-    return [(0, 0), (w - r, 0)] + arc(w - r, r, r, r, -90, 90, 20)[1:-1] + [(w - r, H), (0, H)]
+    rx = w - S * 0.6  # an elliptical bow, about as wide as the other letters
+    return [(0, 0), (w - rx, 0)] + arc(w - rx, H / 2, rx, H / 2, -90, 90, 20)[1:-1] + [(w - rx, H), (0, H)]
 
 
 def R(w):
@@ -86,7 +86,10 @@ def N(w):
     return [(0, 0), (S, 0), (w - S, H * 0.62), (w - S, 0), (w, 0), (w, H), (w - S, H), (S, H * 0.38), (S, H), (0, H)]
 
 
-LETTERS = [(J, 62), (A, 74), (F, 52), (F, 52), (E, 48), (D, 62), (R, 62), (O, 64), (N, 66), (E, 48)]
+LETTERS = [(J, 62), (A, 74), (F, 52), (F, 52), (E, 48), (D, 54), (R, 62), (O, 60), (N, 66), (E, 48)]
+# optical spacing after each letter: a round side leaves air of its own, so
+# the gaps beside the O close up
+KERN = [0, 0, 0, 0, 0, 0, -4, -5, 0, 0]
 VALLEY_AFTER = 4  # the roofs meet after the first E
 
 
@@ -94,7 +97,7 @@ def layout():
     x, out = 0.0, []
     for i, (fn, w) in enumerate(LETTERS):
         out.append((x, w, fn(w)))
-        x += w + GAP + (GAP * 0.6 if i == VALLEY_AFTER else 0)
+        x += w + GAP + KERN[i] + (GAP * 0.6 if i == VALLEY_AFTER else 0)
     return out, x - GAP
 
 
