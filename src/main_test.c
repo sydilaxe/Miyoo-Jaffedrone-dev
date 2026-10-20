@@ -10,6 +10,7 @@
 
 #include "engine.h"
 #include "gfx.h"
+#include "log.h"
 #include "sync.h"
 #include "ui.h"
 
@@ -273,6 +274,66 @@ int main(int argc, char **argv)
         ui_button(BTN_L1, 0);
         printf("hand: string 3 bowed by R1 stays at least %.3f through a glitch (others at most %.3f), %.3f a second after release; L1 + glitch -> %d pluck\n",
                mn, others, after, plucks);
+    }
+
+    /* the log: a short DETAIL session with presses, edits, chords, hand
+     * playing and a simulated slow audio callback, then its summary */
+    {
+        char lp[512], cp[512];
+        snprintf(lp, sizeof lp, "%s/session_log.txt", out);
+        snprintf(cp, sizeof cp, "%s/session.cfg", out);
+        remove(lp);
+        song_default();
+        engine_init(RATE);
+        engine_set_playing(1);
+        uint64_t ms = 1000;
+        jdlog_set_clock(ms);
+        jdlog_open(lp, cp);
+        jdlog_set_level(LOG_DETAIL);
+        AudioTiming at = {0};
+        at.buffer_us = 21333;
+        for (int i = 0; i < 300; i++) { /* 3 s */
+            engine_render(pcm, RATE / 100);
+            ui_tick(10);
+            ms += 10;
+            at.calls++;
+            at.us_sum += i == 150 ? 30000 : 300; /* one slow callback */
+            at.us_max = at.us_max > (i == 150 ? 30000u : 300u) ? at.us_max : (i == 150 ? 30000u : 300u);
+            at.late += i == 150;
+            jdlog_tick(ms, &at);
+            if (i == 20)
+                press(BTN_RIGHT), press(BTN_X), press(BTN_B);
+            if (i == 40)
+                ui_button(BTN_START, 1), press(BTN_R1), ui_button(BTN_START, 0); /* to SOUND */
+            if (i >= 60 && i < 70)
+                press(BTN_X); /* one parameter, ten times: one merged line */
+            if (i == 120)
+                press(BTN_SELECT);
+            if (i == 140)
+                ui_button(BTN_START, 1), press(BTN_L1), ui_button(BTN_START, 0); /* back to PLAY */
+            if (i == 160)
+                ui_button(BTN_R1, 1);
+            if (i == 220)
+                ui_button(BTN_R1, 0);
+        }
+        jdlog_set_clock(ms);
+        jdlog_close();
+        FILE *lf = fopen(lp, "r");
+        int lines = 0, stat = 0, ev = 0, hint = 0, sum = 0, voice = 0, param = 0;
+        char ln[256];
+        while (lf && fgets(ln, sizeof ln, lf)) {
+            lines++;
+            stat += strstr(ln, " STAT ") != NULL;
+            ev += strstr(ln, " EVENT ") != NULL;
+            hint += strstr(ln, " HINT ") != NULL;
+            sum += strstr(ln, " SUM ") != NULL;
+            voice += strstr(ln, " VOICE ") != NULL;
+            param += strstr(ln, "param ") != NULL;
+        }
+        if (lf)
+            fclose(lf);
+        printf("log: %d lines (%d status, %d voice, %d events incl. %d merged param lines, %d hints, %d summary)\n", lines, stat,
+               voice, ev, param, hint, sum);
     }
 
     snprintf(path, sizeof path, "%s/drone.wav", out);

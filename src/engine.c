@@ -71,6 +71,18 @@ typedef struct {
 
 Song song;
 Live live;
+/* each voice's recent sound, kept only while the log reads pitches */
+#define VCAP 2048
+static float vcap[NS][VCAP];
+static volatile int vcap_w;
+EngineStats stats = {.lev_min = 99.f};
+
+void engine_stats_reset(void)
+{
+    stats.frames = stats.clips = 0;
+    stats.peak = stats.rms_acc = stats.lev_acc = 0.f;
+    stats.lev_min = 99.f;
+}
 
 /* ------------------------------------------------------------ scales
  *
@@ -410,6 +422,7 @@ typedef struct {
     float sb_a, sb_b, sb_prev, sb_r[2][2];
     int sb_n;
     float f_sound; /* the voice's pitch in Hz now */
+
     /* per sub-block targets, ramped */
     float D, D_cur, lvl, lvl_cur;
 } String;
@@ -1432,6 +1445,45 @@ static void wind_setup(WindVoice *v, String *st, const int *P, float hz, float s
     st->D = fmaxf(3.f, fminf(loop * st->corr - lp_delay - ap_delay, DL_MAX - 4.f));
 }
 
+/* a voice's pitch from its recent sound: the normalized difference (YIN)
+ * over periods within 40% of its note, refined between samples. For the
+ * log, from the main thread; a few hundred thousand operations a voice */
+float engine_voice_pitch(int v)
+{
+    if (v < 0 || v >= NS || str[v].f_sound <= 0.f)
+        return 0.f;
+    static float x[VCAP];
+    int w = vcap_w;
+    for (int i = 0; i < VCAP; i++)
+        x[i] = vcap[v][(w + i) & (VCAP - 1)];
+    float want = sr / str[v].f_sound;
+    int lo = (int)(want * 0.7f), hi = (int)(want * 1.4f) + 1, n = VCAP / 2;
+    if (lo < 2 || hi + n >= VCAP)
+        return 0.f;
+    float d[VCAP / 2 + 2], e0 = 0.f;
+    for (int i = 0; i < n; i++)
+        e0 += x[i] * x[i];
+    if (e0 < 1e-9f)
+        return 0.f;
+    int best = -1;
+    for (int lag = lo; lag <= hi && lag < VCAP / 2; lag++) {
+        float acc = 0.f, e1 = 0.f;
+        for (int i = 0; i < n; i++) {
+            float dd = x[i] - x[i + lag];
+            acc += dd * dd;
+            e1 += x[i + lag] * x[i + lag];
+        }
+        d[lag] = acc / (e0 + e1);
+        if (best < 0 || d[lag] < d[best])
+            best = lag;
+    }
+    if (best <= lo || best >= hi || d[best] > 0.5f)
+        return 0.f; /* no clear period near the note */
+    float y0 = d[best - 1], y1 = d[best], y2 = d[best + 1], den = y0 - 2.f * y1 + y2;
+    float off = den != 0.f ? 0.5f * (y0 - y2) / den : 0.f;
+    return sr / (best + (off > -1.f && off < 1.f ? off : 0.f));
+}
+
 #define SUB 64
 
 /* tiny numbers in decaying tails are flushed to zero: on ARM VFP and x86
@@ -1820,6 +1872,8 @@ void engine_render(int16_t *out, int frames)
                 st->w = st->w + 1 < DL_MAX ? st->w + 1 : 0;
 
             voice_out:
+                if (stats.detail) /* the last moments of each voice as heard, for the log's pitch reading */
+                    vcap[s][vcap_w] = o;
                 if (sub_g > 0.f) {
                     /* undertones: every n-th upward crossing of the voice (lowpassed
                      * to its fundamental) strikes a resonance n times lower */
@@ -1853,6 +1907,8 @@ void engine_render(int16_t *out, int frames)
                     meter[s] = a;
                 st->vis_ph += 0.6f / st->D_cur;
             }
+            if (stats.detail)
+                vcap_w = (vcap_w + 1) & (VCAP - 1);
             /* the bridge, without DC, for the next sample */
             bridge_hp = br - bridge_x1 + 0.995f * bridge_hp;
             bridge_x1 = br;
@@ -1987,6 +2043,12 @@ void engine_render(int16_t *out, int frames)
             float a = fmaxf(fabsf(L), fabsf(R));
             if (a > mm)
                 mm = a;
+            /* for the log */
+            stats.rms_acc += 0.5f * (L * L + R * R);
+            stats.clips += a > 0.98f;
+            stats.lev_acc += lev_g;
+            if (lev_g < stats.lev_min)
+                stats.lev_min = lev_g;
             /* to 16 bits with triangular dither, rounded: quiet tails fade
              * into soft noise instead of grainy steps */
             out[2 * n] = (int16_t)lrintf(L * 32000.f + frand() - frand());
@@ -2018,6 +2080,16 @@ void engine_render(int16_t *out, int frames)
             live.flash[s][r] = flash[s][r] *= fl;
     }
     live.master_meter = mm;
+    stats.frames += frames;
+    if (mm > stats.peak)
+        stats.peak = mm;
+    for (int s = 0; s < NS; s++) {
+        String *st = &str[s];
+        stats.f_target[s] = st->f_sound;
+        stats.meter[s] = live.meter[s];
+        stats.breath[s] = song.gp[GP_ENGINE] == ENG_WIND ? st->pr : st->bow_env;
+        stats.corr[s] = st->corr > 0.f ? st->corr : 1.f;
+    }
 
 }
 

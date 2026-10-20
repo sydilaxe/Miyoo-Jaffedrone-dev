@@ -11,6 +11,7 @@
 
 #include "engine.h"
 #include "gfx.h"
+#include "log.h"
 #include "sync.h"
 
 #define C_BG 0x14161b
@@ -52,6 +53,58 @@ static char toast[48];
 static int wrap(int x, int n) { return ((x % n) + n) % n; }
 static int clampi(int x, int lo, int hi) { return x < lo ? lo : x > hi ? hi : x; }
 
+/* ---------------------------------------------------------------- log
+ * What the player does, for the log: every message shown is an event;
+ * parameter changes are merged while a button repeats; presses, page time,
+ * adjustments and hand playing are counted for the session summary. */
+static const char *const btn_names[BTN_COUNT] = {"UP", "DOWN", "LEFT", "RIGHT", "A", "B", "X", "Y",
+                                                 "L1", "R1", "L2", "R2", "SELECT", "START", "MENU"};
+static int presses[BTN_COUNT], page_ms[8], hand_plucks, hand_bow_ms, bow_start_ms, chords_seen;
+static uint32_t last_chords;
+#define NADJ 48
+static struct {
+    char name[32];
+    int n;
+} adj[NADJ];
+static int nadj;
+static char pend_name[32];
+static int pend_from, pend_to, pend_ms = -1;
+
+static void count_adjust(const char *name)
+{
+    for (int i = 0; i < nadj; i++)
+        if (!strcmp(adj[i].name, name)) {
+            adj[i].n++;
+            return;
+        }
+    if (nadj < NADJ) {
+        snprintf(adj[nadj].name, sizeof adj[nadj].name, "%s", name);
+        adj[nadj++].n = 1;
+    }
+}
+
+static void flush_param(void)
+{
+    if (pend_ms < 0)
+        return;
+    jdlog("param %s %d -> %d", pend_name, pend_from, pend_to);
+    pend_ms = -1;
+}
+
+/* a parameter moved; repeats of the same one merge into one line */
+static void log_param(const char *name, int from, int to)
+{
+    count_adjust(name);
+    if (pend_ms >= 0 && strcmp(pend_name, name))
+        flush_param();
+    if (pend_ms < 0) {
+        snprintf(pend_name, sizeof pend_name, "%s", name);
+        pend_from = from;
+    }
+    pend_to = to;
+    pend_ms = 0;
+}
+
 static void say(const char *fmt, ...)
 {
     va_list ap;
@@ -59,6 +112,41 @@ static void say(const char *fmt, ...)
     vsnprintf(toast, sizeof toast, fmt, ap);
     va_end(ap);
     toast_ms = 1400;
+    jdlog("%s", toast);
+}
+
+void ui_summary(void (*out)(const char *line))
+{
+    char l[160];
+    int n = 0;
+    flush_param();
+    n = snprintf(l, sizeof l, "presses:");
+    for (int b = 0; b < BTN_COUNT; b++)
+        if (presses[b] && n < (int)sizeof l - 16)
+            n += snprintf(l + n, sizeof l - n, " %s %d", btn_names[b], presses[b]);
+    out(l);
+    n = snprintf(l, sizeof l, "time on pages:");
+    for (int p = 0; p < PAGE_COUNT; p++)
+        n += snprintf(l + n, sizeof l - n, " %s %.0f s", page_names[p], page_ms[p] / 1000.0);
+    out(l);
+    /* the five most adjusted */
+    n = snprintf(l, sizeof l, "most adjusted:");
+    for (int k = 0; k < 5; k++) {
+        int best = -1;
+        for (int i = 0; i < nadj; i++)
+            if (adj[i].n > 0 && (best < 0 || adj[i].n > adj[best].n))
+                best = i;
+        if (best < 0)
+            break;
+        n += snprintf(l + n, sizeof l - n, " %s %d", adj[best].name, adj[best].n);
+        adj[best].n = -adj[best].n; /* taken */
+    }
+    for (int i = 0; i < nadj; i++)
+        adj[i].n = adj[i].n < 0 ? -adj[i].n : adj[i].n;
+    out(l);
+    snprintf(l, sizeof l, "hand: %d plucks or tongued notes, %.1f s bowed or blown; %d chord changes", hand_plucks,
+             hand_bow_ms / 1000.0, chords_seen);
+    out(l);
 }
 
 void ui_init(void) {}
@@ -209,6 +297,16 @@ static void adjust(int dir, int repeats)
     int nv = clampi(*v + dir * step, d->min, d->max);
     if (nv == *v)
         return;
+    {
+        char nm[32];
+        if (c->kind == CK_S)
+            snprintf(nm, sizeof nm, "%d %s", c->a + 1, sparam_name(c->b));
+        else if (c->kind == CK_L)
+            snprintf(nm, sizeof nm, "LFO%d %s", c->a + 1, d->name);
+        else
+            snprintf(nm, sizeof nm, "%s", d->name);
+        log_param(nm, *v, nv);
+    }
     if (c->kind == CK_G && c->b == GP_SCALE) {
         set_scale(nv);
         return;
@@ -342,11 +440,19 @@ static void action(int b, int repeats)
         else if (b == BTN_L1) {
             if (bowing >= 0) /* already bowing: L1 overblows / touches a harmonic */
                 engine_overblow(bowing, 1);
-            else
+            else {
                 engine_pluck(cur_s);
+                hand_plucks++;
+                if (jdlog_level() == LOG_DETAIL)
+                    jdlog("hand %s voice %d", song.gp[GP_ENGINE] == ENG_WIND ? "tongue" : "pluck", cur_s + 1);
+            }
         }
         else {
             bowing = cur_s;
+            bow_start_ms = now_ms;
+            if (jdlog_level() == LOG_DETAIL)
+                jdlog("hand %s voice %d%s", song.gp[GP_ENGINE] == ENG_WIND ? "blow" : "bow", cur_s + 1,
+                      held[BTN_L1] ? (song.gp[GP_ENGINE] == ENG_WIND ? ", overblown" : ", harmonic") : "");
             engine_bow(cur_s, 1);
             /* R1 added while L1 is held: overblow (wind) or a harmonic (strings) */
             engine_overblow(cur_s, held[BTN_L1]);
@@ -354,6 +460,12 @@ static void action(int b, int repeats)
         return;
     case BTN_START: return; /* acts on release, unless used for a page change */
     case BTN_SELECT:
+        if (held[BTN_START]) { /* START + SELECT: the log's level */
+            start_used = 1;
+            jdlog_set_level((jdlog_level_raw() + 1) % NLOGLEVEL);
+            say("LOG %s", jdlog_level_name(jdlog_level_raw()));
+            return;
+        }
         engine_next_chord();
         changed = 1;
         if (!quiet)
@@ -441,16 +553,34 @@ void ui_button(int b, int down)
         return;
     }
     if (down) {
+        int pg = page;
+        presses[b]++;
+        if (jdlog_level() == LOG_DETAIL)
+            jdlog("press %s%s%s on %s", held[BTN_L2] && b != BTN_L2 ? "L2+" : "", held[BTN_R2] && b != BTN_R2 ? "R2+" : "",
+                  btn_names[b], page_names[page]);
         ui_lock();
         action(b, 0);
         ui_unlock();
+        if (page != pg)
+            jdlog("page %s", page_names[page]);
     }
 }
 
 void ui_tick(int ms)
 {
     now_ms += ms;
+    page_ms[page] += ms;
+    if (pend_ms >= 0 && (pend_ms += ms) > 700)
+        flush_param();
+    if (live.chords != last_chords) {
+        last_chords = live.chords;
+        chords_seen++;
+        jdlog("chord %s (%s)", engine_chord_name(), engine_scale_name(song.gp[GP_SCALE]));
+    }
     if (bow_release_ms > 0 && (bow_release_ms -= ms) <= 0 && bowing >= 0 && !held[BTN_R1]) {
+        hand_bow_ms += now_ms - bow_start_ms;
+        if (jdlog_level() == LOG_DETAIL)
+            jdlog("hand release voice %d after %.1f s", bowing + 1, (now_ms - bow_start_ms) / 1000.0);
         ui_lock();
         engine_bow(bowing, 0);
         engine_overblow(bowing, 0);
@@ -613,6 +743,8 @@ static void draw_header(void)
     }
     else
         gfx_ring(ix + 8, 24, 7.f, 2.f, C_DIM);
+    if (jdlog_level() != LOG_OFF)
+        gfx_text(ix - 16 - gfx_text_w("LOG", FONT_SMALL), 24, "LOG", jdlog_level() == LOG_DETAIL ? C_SEA : C_DIM, FONT_SMALL);
     if (song.gp[GP_SYNC] != SYNC_OFF) {
         const SyncStatus *ss = sync_status();
         int linked = ss->leading || ss->have_leader;

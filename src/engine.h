@@ -8,7 +8,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define JD_VERSION "0.4.0"
+#define JD_VERSION "0.4.1"
 
 #define NS 5
 #define NSP 24 /* params per string */
@@ -95,8 +95,20 @@ typedef struct {
     volatile uint32_t chords;     /* counts chord changes (manual and CHANGES) */
 } Live;
 
+/* counters for the log, filled by the audio thread and read (and reset)
+ * by the main thread; a torn read only blurs one status line */
+typedef struct {
+    volatile uint32_t frames, clips;
+    volatile float peak, rms_acc, lev_min, lev_acc;
+    volatile float f_target[NS], f_meas[NS], meter[NS], breath[NS], corr[NS];
+    volatile int detail; /* measure each voice's pitch */
+} EngineStats;
+
 extern Song song;
 extern Live live;
+extern EngineStats stats;
+void engine_stats_reset(void);
+float engine_voice_pitch(int v); /* from its recent sound (log DETAIL only) */
 
 const ParamDef *sparam_def(int p);
 const char *sparam_name(int p); /* the name for the current engine */

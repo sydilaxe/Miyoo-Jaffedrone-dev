@@ -4,3 +4,5 @@ dist/Jaffedrone/jaffedrone
 dist/Jaffedrone/jaffedrone.sav
 dist/Jaffedrone/jaffedrone.sav.tmp
 dist/Jaffedrone/log.txt
+dist/Jaffedrone/jaffedrone_log.txt*
+dist/Jaffedrone/jaffedrone.cfg

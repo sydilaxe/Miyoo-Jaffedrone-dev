@@ -258,6 +258,34 @@ Songs from earlier versions load as they sounded:
 - COUPLE, BODY, CHANGES, EVOLVE, RELATE, binaural and the sympathetic strings are off, and every pulse plays.
 - The old master gate is gone, so songs that used it play ungated.
 
+## Log
+
+Jaffedrone keeps a log for tuning the engine, following how it is played, and spotting audio problems:
+`jaffedrone_log.txt` in the app folder (it rotates to `jaffedrone_log.txt.1` past 2 MB). **START +
+SELECT** cycles it OFF, BASIC and DETAIL; LOG shows in the header while it runs, and the choice is kept in
+`jaffedrone.cfg`. It starts at BASIC.
+
+- **Events:** every message shown, parameter changes (repeats while a button is held are merged into one
+  line), page changes, chord changes with their scale, and the audio setup at start. DETAIL adds every press
+  (with L2/R2 held) and hand playing: plucks, tongued notes, bowing or blowing, with how long.
+- **Status:** every 10 s (every second in DETAIL), for example:
+  `STAT load avg 4% peak 9% late 0 | peak 0.71 rms 0.18 clips 0 | leveller avg 3.1 min 1.9 | sync lead`
+
+  - **load:** how much of each audio buffer's time rendering took.
+  - **late:** callbacks that came after a gap of more than one and a half buffers. These are crackles.
+  - **peak**, **rms** and **clips:** the output level, and samples near full scale.
+  - **leveller:** how much the leveller lifts the sound.
+- **Voices** (DETAIL): each voice's wanted and measured pitch in hertz and cents, its meter, its breath or
+  bow, and the lip voice's tuning correction. The pitch is measured from the voice's own sound by the same
+  method the test harness uses.
+- **Hints:** plain suggestions when something looks wrong: a high load or late callbacks (raise `JD_BUFFER`,
+  or use fewer sympathetic strings), clipping (lower MASTER), a leveller lifting at full (raise LEVEL or
+  BREATH), or a voice off its note (try another REG, BREATH or EMBOUCH).
+- **Summary** at exit: presses per button, time on each page, the five most adjusted parameters, and how
+  much was played by hand.
+
+The audio thread only fills counters; all writing happens in the main thread.
+
 ## Build
 
 - `make` cross-compiles `dist/Jaffedrone/jaffedrone` with zig against Onion's own SDL 1.2.

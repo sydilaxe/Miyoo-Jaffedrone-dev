@@ -8,6 +8,7 @@
 
 #include "engine.h"
 #include "gfx.h"
+#include "log.h"
 #include "sync.h"
 #include "ui.h"
 
@@ -26,10 +27,24 @@ static void on_signal(int s) { got_signal = s; }
 static void lock(void) { SDL_LockAudio(); }
 static void unlock(void) { SDL_UnlockAudio(); }
 
+/* the audio callback's timing for the log: time spent, and gaps longer
+ * than one and a half buffers (the device ran dry: a crackle) */
+static AudioTiming timing;
+static uint64_t last_cb_us;
+
 static void audio_cb(void *ud, Uint8 *stream, int len)
 {
     (void)ud;
+    uint64_t t0 = now_us();
+    if (last_cb_us && timing.buffer_us && t0 - last_cb_us > timing.buffer_us * 3 / 2)
+        timing.late++;
+    last_cb_us = t0;
     engine_render((int16_t *)stream, len / 4);
+    uint32_t spent = (uint32_t)(now_us() - t0);
+    timing.calls++;
+    timing.us_sum += spent;
+    if (spent > timing.us_max)
+        timing.us_max = spent;
 }
 
 static int map_key(SDLKey k)
@@ -62,6 +77,8 @@ int main(int argc, char **argv)
     signal(SIGINT, on_signal);
 
     fprintf(stderr, "jaffedrone v%s\n", JD_VERSION);
+    jdlog_set_clock(now_us() / 1000);
+    jdlog_open("jaffedrone_log.txt", "jaffedrone.cfg");
     song_default();
     if (song_load(SAVE_PATH))
         fprintf(stderr, "jaffedrone: restored %s\n", SAVE_PATH);
@@ -96,6 +113,9 @@ int main(int argc, char **argv)
     int have_audio = SDL_OpenAudio(&want, NULL) == 0;
     if (have_audio) {
         fprintf(stderr, "jaffedrone: audio %d Hz, %d frames/buffer\n", rate, bufsz);
+        timing.buffer_us = (uint32_t)(1000000.0 * bufsz / rate);
+        jdlog("audio %d Hz, %d frames a buffer (%.1f ms); engine %s, scale %s", rate, bufsz, timing.buffer_us / 1000.0,
+              song.gp[GP_ENGINE] == ENG_WIND ? "WIND" : "STRINGS", engine_scale_name(song.gp[GP_SCALE]));
         ui_lock = lock;
         ui_unlock = unlock;
         SDL_PauseAudio(0);
@@ -118,6 +138,7 @@ int main(int argc, char **argv)
         ui_tick((int)(now - last));
         last = now;
         sync_poll(now_us());
+        jdlog_tick(now_us() / 1000, &timing);
 
         if (SDL_MUSTLOCK(screen))
             SDL_LockSurface(screen);
@@ -145,6 +166,8 @@ int main(int argc, char **argv)
     }
 
     song_save(SAVE_PATH);
+    jdlog_set_clock(now_us() / 1000);
+    jdlog_close();
     sync_close();
     if (have_audio)
         SDL_CloseAudio();

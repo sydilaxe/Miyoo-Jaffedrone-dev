@@ -22,3 +22,5 @@ void ui_tick(int ms);
 void ui_draw(uint32_t *fb);
 int ui_quit_requested(void);
 int ui_take_changed(void);
+/* the session in a few lines (presses, pages, adjustments), for the log */
+void ui_summary(void (*out)(const char *line));

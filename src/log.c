@@ -1,0 +1,172 @@
+#include "log.h"
+
+#include <math.h>
+#include <stdarg.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <string.h>
+
+#include "engine.h"
+#include "sync.h"
+#include "ui.h"
+
+static FILE *f;
+static char path_[512], cfg_[512];
+static int level = LOG_BASIC;
+static uint64_t t_now, t_start, t_last_stat;
+static long written;
+static const char *const level_names[NLOGLEVEL] = {"OFF", "BASIC", "DETAIL"};
+
+const char *jdlog_level_name(int l) { return level_names[l]; }
+int jdlog_level(void) { return f ? level : LOG_OFF; }
+int jdlog_level_raw(void) { return level; }
+void jdlog_set_clock(uint64_t now_ms) { t_now = now_ms; }
+
+static void rotate(void)
+{
+    if (!f || written < LOG_MAX_BYTES)
+        return;
+    char old[520];
+    fclose(f);
+    snprintf(old, sizeof old, "%s.1", path_);
+    rename(path_, old);
+    f = fopen(path_, "w");
+    written = 0;
+}
+
+static void line(const char *tag, const char *fmt, va_list ap)
+{
+    if (!f || level == LOG_OFF)
+        return;
+    double t = (t_now - t_start) / 1000.0;
+    written += fprintf(f, "%9.3f %-5s ", t, tag);
+    written += vfprintf(f, fmt, ap);
+    written += fprintf(f, "\n");
+    rotate();
+}
+
+static void put(const char *tag, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    line(tag, fmt, ap);
+    va_end(ap);
+}
+
+void jdlog(const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    line("EVENT", fmt, ap);
+    va_end(ap);
+}
+
+void jdlog_open(const char *path, const char *cfg_path)
+{
+    snprintf(path_, sizeof path_, "%s", path);
+    snprintf(cfg_, sizeof cfg_, "%s", cfg_path ? cfg_path : "");
+    if (cfg_[0]) {
+        FILE *c = fopen(cfg_, "r");
+        if (c) {
+            int l;
+            if (fscanf(c, "log=%d", &l) == 1 && l >= 0 && l < NLOGLEVEL)
+                level = l;
+            fclose(c);
+        }
+    }
+    f = fopen(path_, "a");
+    if (!f)
+        return;
+    fseek(f, 0, SEEK_END);
+    written = ftell(f);
+    t_start = t_last_stat = t_now;
+    put("START", "jaffedrone v%s, log %s", JD_VERSION, level_names[level]);
+    fflush(f);
+}
+
+void jdlog_set_level(int l)
+{
+    if (l < 0 || l >= NLOGLEVEL)
+        return;
+    if (f && level != LOG_OFF && l == LOG_OFF)
+        put("LOG", "off");
+    level = l;
+    if (f && l != LOG_OFF)
+        put("LOG", "%s", level_names[l]);
+    if (cfg_[0]) {
+        FILE *c = fopen(cfg_, "w");
+        if (c) {
+            fprintf(c, "log=%d\n", l);
+            fclose(c);
+        }
+    }
+    if (f)
+        fflush(f);
+}
+
+/* status: audio load and lateness, levels, the leveller, voices; then hints */
+static void status(AudioTiming *t, double secs)
+{
+    EngineStats s = stats; /* a snapshot; counters keep running */
+    engine_stats_reset();
+    double load = t && t->calls && t->buffer_us ? 100.0 * t->us_sum / t->calls / t->buffer_us : 0;
+    double peak_load = t && t->buffer_us ? 100.0 * t->us_max / t->buffer_us : 0;
+    double rms = s.frames ? sqrt(s.rms_acc / s.frames) : 0, lev = s.frames ? s.lev_acc / s.frames : 0;
+    const SyncStatus *ss = sync_status();
+    put("STAT", "load avg %.0f%% peak %.0f%% late %u | peak %.2f rms %.3f clips %u | leveller avg %.1f min %.1f | sync %s",
+        load, peak_load, t ? t->late : 0, s.peak, rms, s.clips, lev, s.lev_min,
+        ss->leading ? "lead" : ss->have_leader ? "follow" : "-");
+    if (level == LOG_DETAIL)
+        for (int v = 0; v < NS; v++) {
+            if (!song.on[v] || s.f_target[v] <= 0.f)
+                continue;
+            s.f_meas[v] = engine_voice_pitch(v);
+            double cents = s.f_meas[v] > 0.f ? 1200.0 * log2(s.f_meas[v] / s.f_target[v]) : 0;
+            put("VOICE", "%d %s target %.1f Hz measured %.1f Hz (%+.0f c) meter %.3f breath %.2f corr %.3f", v + 1,
+                song.gp[GP_ENGINE] == ENG_WIND ? "wind" : "string", s.f_target[v], s.f_meas[v], cents, s.meter[v],
+                s.breath[v], s.corr[v]);
+            if (s.f_meas[v] > 0.f && fabs(cents) > 30 && s.meter[v] > 0.02f)
+                put("HINT", "voice %d sounds %+.0f cents off its note: try another REG, BREATH or EMBOUCH", v + 1, cents);
+        }
+    /* what to change */
+    if (load > 60)
+        put("HINT", "audio load %.0f%%: raise JD_BUFFER to 2048 or set JD_RATE=44100 in launch.sh", load);
+    if (t && t->late)
+        put("HINT", "%u late audio callbacks (crackles): raise JD_BUFFER, or fewer sympathetic strings", t->late);
+    if (s.clips)
+        put("HINT", "%u samples near full scale: MASTER above 80 drives the clipper; lower it for a cleaner sound", s.clips);
+    if (lev > 14.f && s.peak < 0.2f)
+        put("HINT", "the leveller is lifting the sound fully: raise LEVEL or BREATH/BOW for less noise");
+    (void)secs;
+    if (t)
+        memset(t, 0, offsetof(AudioTiming, buffer_us));
+    fflush(f);
+}
+
+void jdlog_tick(uint64_t now_ms, AudioTiming *t)
+{
+    t_now = now_ms;
+    stats.detail = f && level == LOG_DETAIL;
+    if (!f || level == LOG_OFF)
+        return;
+    uint64_t every = level == LOG_DETAIL ? 1000 : 10000;
+    if (now_ms - t_last_stat >= every) {
+        status(t, (now_ms - t_last_stat) / 1000.0);
+        t_last_stat = now_ms;
+    }
+}
+
+static void summary_line(const char *s) { put("SUM", "%s", s); }
+
+void jdlog_close(void)
+{
+    if (!f)
+        return;
+    if (level != LOG_OFF) {
+        put("END", "session %.0f s", (t_now - t_start) / 1000.0);
+        ui_summary(summary_line);
+    }
+    fclose(f);
+    f = NULL;
+    stats.detail = 0;
+}
