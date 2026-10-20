@@ -182,9 +182,27 @@ The strings are not re-plucked on a change. They keep ringing and slide to the n
   below are the chord, the chords before it and the bars until the next change. On the right: scale, root,
   voicing, changes, CHANCE, glide, tempo, MOTION, HOME, COLOR, EVOLVE, RELATE, drift, Wi-Fi sync and the
   two LFOs.
+- **SONG:** ten presets, the chord memory, key lock and mode, and the drone's attack and release.
 - **MIX:** each string's level, pan and gate with a meter, master, the sympathetic strings' level, the
   undertones (SUB, SUB DIV, SUB RES), then delay,
   reverb and binaural.
+
+## Song: presets, chord memory, key
+
+The SONG page holds:
+
+- **Ten presets.** Each keeps everything: the sound, the rings, the tuning and the progression memory. Choose a
+  tile: **A** loads it, **X** saves the current song to it, and **R2 + Y** clears it. Each tile shows its
+  scale, engine and tempo, and a mark if it holds a progression. Loading a preset keeps the Wi-Fi sync setting.
+- **Chord memory.** Set **PROG** to RECORD and each chord change is kept, starting from the chord sounding now,
+  up to 16. Set it to PLAY and SELECT or CHANGES steps through the kept chords in order, round and round.
+  FREE goes back to the algorithm. R2 + Y on PROG clears the memory. The kept chords are shown as tiles, with
+  the one playing highlighted.
+- **KEY LOCK and MODE,** for playing with others in a fixed key. MODE chooses the mode the chords are drawn
+  from in EQUAL: Ionian, Dorian, Phrygian, Lydian, Mixolydian, Aeolian or Locrian. AUTO is Dorian, as before.
+  KEY LOCK keeps the root, scale and mode from changing, even from shortcuts, and tunes every chord exactly
+  (no random fine detune, no gamelan beating).
+- **ATTACK and RELEASE:** how the drone fades in and out when START starts or stops it, from 0.02 to 10 seconds.
 
 ## Binaural
 
@@ -205,8 +223,12 @@ strings, beats between the ears at the same rate. Listen on headphones.
 - The wavefolder is anti-aliased: it averages the fold over each sample from its antiderivative.
 - The reverb is an eight-line feedback delay network with damping in every line and slow modulation, for a
   dense tail that doesn't ring. TIME runs from 0.5 to 10 seconds.
-- A 3 ms look-ahead leveller keeps peaks clean, and the output is rounded to 16 bits with triangular
-  dither, so quiet tails fade smoothly.
+- A 6 ms look-ahead leveller (up to 10x lift) keeps peaks clean without thumps, and the output is rounded to
+  16 bits with triangular dither, so quiet tails fade smoothly.
+- The reverb and delay hear the sound after TONE, so a dark tone has dark echoes, and four allpasses diffuse
+  attacks into a bloom instead of distinct echoes.
+- Every delay position is kept within its buffer: a float can't count samples past 2^24 (5.8 minutes) to the
+  sample, and that once made the delay click in long sessions.
 - Denormal numbers are flushed to zero in the audio thread, so long tails stay cheap on the ARM chip.
 
 ## Controls
@@ -225,7 +247,7 @@ on the shoulder buttons.
 | X | rotate the pattern |
 | Y | a new simple pattern |
 | L1 | pluck the selected string by hand (WIND: tongue a note) |
-| R1 (hold) | bow the selected string by hand: it swells in and sings steadily for as long as R1 is held (WIND: blow) |
+| R1 (hold) | bow the selected string by hand: the bow is drawn slowly, swelling over about two seconds and brightening as it bites, then sings steadily while R1 is held (WIND: blow) |
 | hold L1, then R1 | bow with a harmonic touch: the next harmonic up sings (WIND: overblow, an octave up, a twelfth for REED) |
 | L2 + up / down | more / fewer steps |
 | L2 + left / right | step length (right = faster) |

@@ -19,7 +19,7 @@ enum { LOG_OFF, LOG_BASIC, LOG_DETAIL, NLOGLEVEL };
 
 /* the audio callback's timing, kept by the platform */
 typedef struct {
-    uint32_t calls, late;    /* late: a gap of more than 1.5 buffers */
+    uint32_t calls, late;    /* late: the device ran out of audio (a dropout) */
     uint32_t us_max, us_sum; /* time spent rendering */
     uint32_t buffer_us;      /* one buffer's worth of time */
 } AudioTiming;

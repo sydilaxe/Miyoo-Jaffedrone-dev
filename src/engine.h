@@ -8,11 +8,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define JD_VERSION "0.4.1"
+#define JD_VERSION "0.5.0"
 
 #define NS 5
 #define NSP 24 /* params per string */
-#define NGP 22 /* global params */
+#define NGP 27 /* global params */
+#define NPROG 16 /* chords in the progression memory */
+#define NPRESET 10
 #define NLFO 2
 #define NLP 4  /* params per LFO */
 #define NFX 17 /* effect params */
@@ -36,7 +38,15 @@ enum { RING_PLUCK, RING_BOW, NRING };
  * string's rhythm */
 enum { GP_MODE, GP_SCALE, GP_ROOT, GP_CHANGES, GP_BPM, GP_DRIFT, GP_GLIDE, GP_CUTOFF, GP_MASTER, GP_SYNC,
        GP_MOTION, GP_HOME, GP_COLOR, GP_EVOLVE, GP_CHANCE, GP_RELATE, GP_ENGINE, GP_EXCITE, GP_MATERIAL,
-       GP_SUB, GP_SUBDIV, GP_SUBRES };
+       GP_SUB, GP_SUBDIV, GP_SUBRES, GP_ATTACK, GP_RELEASE, GP_KEYLOCK, GP_MODALITY, GP_PROG };
+/* GP_ATTACK / GP_RELEASE: how the drone fades in and out with START.
+ * GP_KEYLOCK: for playing with others: the root, scale and mode stay put and
+ * chords are tuned exactly. GP_MODALITY: the mode chords are drawn from in
+ * EQUAL (AUTO is Dorian). GP_PROG: FREE (the algorithm), RECORD (each chord
+ * is kept, up to NPROG) or PLAY (the kept chords, in turn, round and round). */
+enum { MODAL_AUTO, MODAL_IONIAN, MODAL_DORIAN, MODAL_PHRYGIAN, MODAL_LYDIAN, MODAL_MIXOLYDIAN, MODAL_AEOLIAN,
+       MODAL_LOCRIAN, NMODAL };
+enum { PROG_FREE, PROG_RECORD, PROG_PLAY, NPROGMODE };
 /* GP_SUB*: every voice can sound undertones: its pitch divided (an octave,
  * a twelfth or two octaves below, or both octave and twelfth), as a
  * resonance that rings (SUB RES) under the voice. */
@@ -77,6 +87,10 @@ typedef struct {
     int gp[NGP];
     int lfo[NLFO][NLP];
     int fx[NFX];
+    /* the progression memory: each chord's notes, fine tuning and name */
+    int prog_n, prog_pos;
+    int prog_note[NPROG][NS], prog_fine[NPROG][NS];
+    char prog_name[NPROG][24];
 } Song;
 
 /* shared with the UI; the audio thread publishes meters and the beat */
@@ -91,6 +105,7 @@ typedef struct {
     volatile int step[NS][NRING];   /* current step of each ring */
     volatile float flash[NS][NRING]; /* 1 on a hit, fading (display) */
     volatile float bow_env[NS];     /* how open each bow is now */
+    volatile float hand_env[NS];    /* the hand bow alone */
     volatile float symp_meter;      /* sympathetic strings, all together */
     volatile uint32_t chords;     /* counts chord changes (manual and CHANGES) */
 } Live;
@@ -152,5 +167,7 @@ float engine_bpm(void);
 void engine_set_bpm(float bpm);
 
 void song_default(void);
+int song_peek(const char *path, Song *out); /* read a song without playing it */
+void engine_prog_mode(int mode);           /* RECORD starts afresh from the chord now */
 int song_save(const char *path);
 int song_load(const char *path);

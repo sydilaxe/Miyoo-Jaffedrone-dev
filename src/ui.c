@@ -35,7 +35,7 @@ void (*ui_lock)(void) = nop;
 void (*ui_unlock)(void) = nop;
 
 static const uint32_t scol[NS] = {0xc9a67c, 0xad7f61, 0xd9c3a0, 0x9fb7a4, 0x7f9aa6};
-static const char *const page_names[PAGE_COUNT] = {"PLAY", "SOUND", "COMPOSE", "MIX"};
+static const char *const page_names[PAGE_COUNT] = {"PLAY", "SOUND", "COMPOSE", "MIX", "SONG"};
 static int page, cur_s;
 static int ring;  /* PLAY: the selected ring of the selected string */
 static int quiet; /* PLAY: the quiet view, strings and rings only */
@@ -162,6 +162,10 @@ int ui_take_changed(void)
 
 static void set_scale(int sc)
 {
+    if (song.gp[GP_KEYLOCK]) {
+        say("KEY LOCKED");
+        return;
+    }
     engine_set_scale(wrap(sc, engine_nscales()));
     say("%s", engine_scale_name(song.gp[GP_SCALE]));
 }
@@ -170,7 +174,7 @@ static void set_scale(int sc)
  *
  * The SOUND, COMPOSE and MIX pages are laid out as cells, each one
  * parameter; the d-pad moves to the nearest cell in its direction. */
-enum { CK_S, CK_G, CK_L, CK_F }; /* string, global, LFO, effect */
+enum { CK_S, CK_G, CK_L, CK_F, CK_SLOT }; /* string, global, LFO, effect, preset slot */
 typedef struct {
     short x, y, w, h;
     char kind, a, b;
@@ -201,6 +205,75 @@ static const int comp_b[7] = {GP_MOTION, GP_HOME, GP_COLOR, GP_EVOLVE, GP_RELATE
 #define MIX_FX_Y 244
 #define MIX_FXC_Y 330
 
+/* ------------------------------------------------------------- presets
+ * Ten slots, each a whole song (sound, rings, tuning, the progression
+ * memory) in its own file. What each holds is read back for the tiles. */
+static char preset_dir[400] = ".";
+static struct {
+    int used, scale, engine, exciter, bpm, prog_n;
+} slot_info[NPRESET];
+static int slots_read;
+
+void ui_set_dir(const char *dir) { snprintf(preset_dir, sizeof preset_dir, "%s", dir); slots_read = 0; }
+
+static void preset_path(int i, char *b, int n) { snprintf(b, n, "%s/preset_%02d.jds", preset_dir, i + 1); }
+
+static void read_slots(void)
+{
+    for (int i = 0; i < NPRESET; i++) {
+        char p[512];
+        Song t;
+        preset_path(i, p, sizeof p);
+        slot_info[i].used = song_peek(p, &t);
+        if (slot_info[i].used) {
+            slot_info[i].scale = t.gp[GP_SCALE];
+            slot_info[i].engine = t.gp[GP_ENGINE];
+            slot_info[i].exciter = t.gp[GP_EXCITE];
+            slot_info[i].bpm = t.gp[GP_BPM];
+            slot_info[i].prog_n = t.prog_n;
+        }
+    }
+    slots_read = 1;
+}
+
+static void preset_save(int i)
+{
+    char p[512];
+    preset_path(i, p, sizeof p);
+    if (song_save(p))
+        say("SAVED TO PRESET %d", i + 1);
+    else
+        say("COULD NOT SAVE PRESET %d", i + 1);
+    slots_read = 0;
+}
+
+static void preset_load(int i)
+{
+    char p[512];
+    preset_path(i, p, sizeof p);
+    int sync = song.gp[GP_SYNC]; /* the Wi-Fi setting belongs to the room, not the preset */
+    if (song_load(p)) {
+        song.gp[GP_SYNC] = sync;
+        engine_set_bpm((float)song.gp[GP_BPM]);
+        say("PRESET %d", i + 1);
+    }
+    else
+        say("PRESET %d IS EMPTY", i + 1);
+}
+
+static void preset_clear(int i)
+{
+    char p[512];
+    preset_path(i, p, sizeof p);
+    remove(p);
+    say("CLEARED PRESET %d", i + 1);
+    slots_read = 0;
+}
+
+#define SLOT_Y 82
+#define PROGT_Y 230
+#define SONGC_Y 304
+
 static void layout(int pg)
 {
     ncell = 0;
@@ -229,6 +302,18 @@ static void layout(int pg)
             for (int p = 0; p < NLP; p++)
                 cell(COMP_X + l * COMP_CW, LFO_Y + p * 33, COMP_CW - 6, 30, CK_L, l, p);
         break;
+    case PAGE_SONG:
+        for (int i = 0; i < NPRESET; i++)
+            cell(5 + (i % 5) * 127, SLOT_Y + (i / 5) * 62, 122, 56, CK_SLOT, i, 0);
+        {
+            static const int rows[3][3] = {{GP_PROG, GP_ATTACK, GP_RELEASE},
+                                           {GP_KEYLOCK, GP_ROOT, GP_MODALITY},
+                                           {GP_SCALE, GP_CHANGES, GP_CHANCE}};
+            for (int r = 0; r < 3; r++)
+                for (int c = 0; c < 3; c++)
+                    cell(3 + c * 213, SONGC_Y + r * 50, 207, 46, CK_G, 0, rows[r][c]);
+        }
+        break;
     case PAGE_MIX:
         for (int s = 0; s < NS; s++) {
             cell(s * cw + 3, BODY_Y + 42, cw - 6, 31, CK_S, s, SP_LEVEL);
@@ -247,9 +332,12 @@ static void layout(int pg)
     }
 }
 
+static int dummy_val;
+static const ParamDef slot_def = {"PRESET", 0, 1};
 static int *cell_ref(const Cell *c, const ParamDef **d)
 {
     switch (c->kind) {
+    case CK_SLOT: *d = &slot_def; return &dummy_val;
     case CK_S: *d = sparam_def(c->b); return &song.sp[(int)c->a][(int)c->b];
     case CK_G: *d = gparam_def(c->b); return &song.gp[(int)c->b];
     case CK_L: *d = lparam_def(c->b); return &song.lfo[(int)c->a][(int)c->b];
@@ -260,6 +348,7 @@ static int *cell_ref(const Cell *c, const ParamDef **d)
 static void cell_format(const Cell *c, char *v, int n)
 {
     switch (c->kind) {
+    case CK_SLOT: v[0] = 0; (void)n; break;
     case CK_S: sparam_format(c->a, c->b, v, n); break;
     case CK_G: gparam_format(c->b, v, n); break;
     case CK_L: lparam_format(c->a, c->b, v, n); break;
@@ -306,6 +395,18 @@ static void adjust(int dir, int repeats)
         else
             snprintf(nm, sizeof nm, "%s", d->name);
         log_param(nm, *v, nv);
+    }
+    if (c->kind == CK_SLOT)
+        return;
+    if (song.gp[GP_KEYLOCK] && c->kind == CK_G && (c->b == GP_SCALE || c->b == GP_ROOT || c->b == GP_MODALITY)) {
+        say("KEY LOCKED");
+        return;
+    }
+    if (c->kind == CK_G && c->b == GP_PROG) {
+        engine_prog_mode(nv);
+        say("%s", nv == PROG_RECORD ? "RECORDING CHORDS: EACH CHANGE IS KEPT" : nv == PROG_PLAY ? "PLAYING THE KEPT CHORDS"
+                                                                                               : "FREE: THE ALGORITHM CHOOSES");
+        return;
     }
     if (c->kind == CK_G && c->b == GP_SCALE) {
         set_scale(nv);
@@ -481,6 +582,28 @@ static void action(int b, int repeats)
         return;
     }
     int cs = cell_string();
+    if (page == PAGE_SONG) {
+        layout(page);
+        const Cell *c = sel_cell[page] < ncell ? &cells[sel_cell[page]] : NULL;
+        if (c && c->kind == CK_SLOT && (b == BTN_A || b == BTN_X || b == BTN_Y)) {
+            if (b == BTN_A)
+                preset_load(c->a);
+            else if (b == BTN_X)
+                preset_save(c->a);
+            else if (held[BTN_R2]) {
+                r2_used = 1;
+                preset_clear(c->a);
+            }
+            return;
+        }
+        if (c && c->kind == CK_G && c->b == GP_PROG && b == BTN_Y && held[BTN_R2]) {
+            r2_used = 1;
+            song.prog_n = song.prog_pos = 0;
+            song.gp[GP_PROG] = PROG_FREE;
+            say("PROGRESSION CLEARED");
+            return;
+        }
+    }
     switch (b) {
     case BTN_Y: adjust(-1, repeats); return;
     case BTN_X: adjust(+1, repeats); return;
@@ -683,7 +806,10 @@ static void param_row(int x, int y, int w, int h, int sel, int on, const char *n
 static void draw_string_big(int x0, int x1, int y, float amp, float ph, uint32_t col, int on, float big)
 {
     int w = x1 - x0;
-    float a = fminf(1.f, sqrtf(amp * 6.f)) * 11.f * big;
+    /* in decibels, so a quiet string still visibly moves: -54 dB still,
+     * -10 dB the full swing */
+    float db = amp > 1e-6f ? 20.f * log10f(amp) : -120.f;
+    float a = fminf(1.f, fmaxf(0.f, (db + 54.f) / 44.f)) * 11.f * big;
     int py = y;
     for (int i = 0; i <= w; i++) {
         float t = (float)i / w;
@@ -762,9 +888,10 @@ static void draw_footer(void)
         "D-PAD:MOVE Y:- X:+ A:MUTE B:PLUCK L1/R1:PAGE SEL:CHORD",
         "D-PAD:MOVE Y:- X:+ B:PLUCK L1/R1:PAGE SEL:NEXT CHORD",
         "D-PAD:MOVE Y:- X:+ A:MUTE B:PLUCK L1/R1:PAGE SEL:CHORD",
+        "PRESET A:LOAD X:SAVE R2+Y:CLEAR  PROG R2+Y:CLEAR  SEL:CHORD",
     };
     const char *h = hints[page];
-    if (page != PAGE_PLAY && song.gp[GP_ENGINE] == ENG_WIND)
+    if (page != PAGE_PLAY && page != PAGE_SONG && song.gp[GP_ENGINE] == ENG_WIND)
         h = page == PAGE_COMPOSE ? "D-PAD:MOVE Y:- X:+ B:TONGUE L1/R1:PAGE SEL:NEXT CHORD"
                                  : "D-PAD:MOVE Y:- X:+ A:MUTE B:TONGUE L1/R1:PAGE SEL:CHORD";
     if (page == PAGE_PLAY && song.gp[GP_ENGINE] == ENG_WIND)
@@ -818,6 +945,8 @@ static void draw_cells(void)
     layout(page);
     for (int i = 0; i < ncell; i++) {
         const Cell *c = &cells[i];
+        if (c->kind == CK_SLOT)
+            continue; /* drawn as tiles by draw_song */
         const ParamDef *d;
         int *v = cell_ref(c, &d);
         char val[24];
@@ -835,6 +964,10 @@ static void draw_cells(void)
             on = 0;
         if (c->kind == CK_G && (c->b == GP_SUBDIV || c->b == GP_SUBRES) && !song.gp[GP_SUB])
             on = 0;
+        if (c->kind == CK_G && c->b == GP_MODALITY && song.gp[GP_SCALE] != 0)
+            on = 0; /* modes are for EQUAL */
+        if (c->kind == CK_G && song.gp[GP_KEYLOCK] && (c->b == GP_SCALE || c->b == GP_ROOT || c->b == GP_MODALITY))
+            on = 0; /* locked */
         param_row(c->x, c->y, c->w, c->h, i == sel_cell[page], on, c->kind == CK_S ? sparam_name(c->b) : d->name, val, t,
                   d->min < 0, cell_col(c));
     }
@@ -1022,6 +1155,54 @@ static void draw_mix(void)
     draw_cells();
 }
 
+/* SONG: ten preset tiles, the progression memory, then its controls */
+static void draw_song(void)
+{
+    if (!slots_read)
+        read_slots();
+    layout(page);
+    gfx_text(8, BODY_Y, "PRESETS", C_DIM, FONT_SMALL);
+    for (int i = 0; i < ncell; i++) {
+        const Cell *c = &cells[i];
+        if (c->kind != CK_SLOT)
+            continue;
+        int k = c->a, sel = i == sel_cell[page], used = slot_info[k].used;
+        uint32_t col = used ? C_COPPER : C_LINE;
+        chamfer(c->x, c->y, c->w, c->h, 10, sel ? gfx_mix(C_PANEL2, C_COPPER, 0.25f) : C_PANEL);
+        if (sel)
+            gfx_fill(c->x, c->y, 3, c->h, C_COPPER);
+        char t[32];
+        snprintf(t, sizeof t, "%d", k + 1);
+        gfx_text(c->x + 8, c->y + 2, t, used ? C_SAND : C_DIM, FONT_SMALL);
+        if (used) {
+            snprintf(t, sizeof t, "%.10s", engine_scale_name(slot_info[k].scale));
+            gfx_text(c->x + 30, c->y + 2, t, C_TEXT, FONT_SMALL);
+            static const char *const exs[NEXCITE] = {"LIP", "REED", "DOUBLE", "FLUTE", "FREE", "RECORD", "BANSURI"};
+            snprintf(t, sizeof t, "%s %d", slot_info[k].engine ? exs[slot_info[k].exciter] : "STRING", slot_info[k].bpm);
+            gfx_text(c->x + 8, c->y + 28, t, C_DIM, FONT_SMALL);
+            if (slot_info[k].prog_n) /* a mark for a kept progression */
+                para(c->x + c->w - 22, c->y + 32, 12, 12, 3, col);
+        }
+        else
+            gfx_text(c->x + 30, c->y + 2, "-", C_DIM, FONT_SMALL);
+    }
+    /* the progression memory: up to sixteen chords; the one playing ringed */
+    int pm = song.gp[GP_PROG];
+    char hd[48];
+    snprintf(hd, sizeof hd, "PROGRESSION  %d/%d  %s", song.prog_n, NPROG, pm == PROG_RECORD ? "RECORDING" : pm == PROG_PLAY ? "PLAYING" : "");
+    gfx_text(8, PROGT_Y - 24, hd, pm == PROG_RECORD ? C_RED : pm == PROG_PLAY ? C_SEA : C_DIM, FONT_SMALL);
+    for (int k = 0; k < NPROG; k++) {
+        int x = 5 + (k % 8) * 79, y = PROGT_Y + (k / 8) * 34, here = pm == PROG_PLAY && k == song.prog_pos;
+        para(x, y, 72, 30, 5, k < song.prog_n ? (here ? gfx_mix(C_PANEL2, C_SEA, 0.5f) : C_PANEL2) : C_PANEL);
+        if (k < song.prog_n) {
+            char t[12];
+            snprintf(t, sizeof t, "%.7s", song.prog_name[k]);
+            gfx_text(x + 8, y + 4, t, here ? C_TEXT : C_SAND, FONT_SMALL);
+        }
+    }
+    draw_cells();
+}
+
 /* a Euclidean ring as geometry: the steps are the corners of a polygon, the
  * pulses are joined into a second polygon inside it, which lights on a hit.
  * glow (0..1) fills it: the flash for plucks, the bow's swell for bows. */
@@ -1043,7 +1224,9 @@ static void draw_ring(float cx, float cy, float r, const int *P, int rg, int cur
     for (int i = 0; i < steps; i++)
         if (euclid_hit(steps, pulses, rot, i))
             px[np++] = i;
-    uint32_t fill = on ? gfx_mix(C_BG, col, 0.12f + 0.55f * glow) : gfx_mix(C_BG, C_LINE, 0.5f);
+    /* a ring that is off still lights when the string is played by hand */
+    uint32_t fill = on ? gfx_mix(C_BG, col, 0.12f + 0.55f * glow)
+                       : glow > 0.03f && !dim ? gfx_mix(C_BG, col, 0.5f * glow) : gfx_mix(C_BG, C_LINE, 0.5f);
     if (np >= 3)
         for (int k = 1; k + 1 < np; k++)
             gfx_tri(vx[px[0]], vy[px[0]], vx[px[k]], vy[px[k]], vx[px[k + 1]], vy[px[k + 1]], fill);
@@ -1117,12 +1300,13 @@ static void draw_play(void)
         /* the string itself, brighter while bowed by hand */
         int sy = t + drop + 42;
         draw_string(x + 12, x + w - 12, sy, on ? live.meter[s] : 0.f, live.phase[s],
-                    bowing == s ? gfx_mix(col, C_TEXT, 0.5f) : col, on);
+                    gfx_mix(col, C_TEXT, 0.6f * live.hand_env[s] + 0.4f * live.flash[s][RING_PLUCK]), on);
         float r = 38.f, cx = x + w / 2.f;
         float pcy = sy + 20 + r + 12, bcy = pcy + 2 * r + 34;
         draw_ring(cx, pcy, r, P, RING_PLUCK, live.step[s][RING_PLUCK], live.flash[s][RING_PLUCK], col,
                   sel && ring == RING_PLUCK, !on);
-        draw_ring(cx, bcy, r, P, RING_BOW, live.step[s][RING_BOW], live.bow_env[s], col, sel && ring == RING_BOW, !on);
+        draw_ring(cx, bcy, r, P, RING_BOW, live.step[s][RING_BOW], P[SP_BON] ? live.bow_env[s] : live.hand_env[s], col,
+                  sel && ring == RING_BOW, !on);
         /* when the bow ring is off the bow holds: a steady bar across the ring */
         if (!P[SP_BON] && on && P[SP_BOW] > 0)
             gfx_fill((int)(cx - r * 0.6f), (int)bcy - 1, (int)(r * 1.2f), 3, gfx_mix(C_BG, col, 0.5f));
@@ -1147,7 +1331,8 @@ static void draw_quiet(void)
         const int *P = song.sp[s];
         draw_string_big(40, SCREEN_W - 150, y, on ? live.meter[s] : 0.f, live.phase[s], scol[s], on, 2.4f);
         draw_ring(SCREEN_W - 110, y, 20.f, P, RING_PLUCK, live.step[s][RING_PLUCK], live.flash[s][RING_PLUCK], scol[s], 0, !on);
-        draw_ring(SCREEN_W - 50, y, 20.f, P, RING_BOW, live.step[s][RING_BOW], live.bow_env[s], scol[s], 0, !on);
+        draw_ring(SCREEN_W - 50, y, 20.f, P, RING_BOW, live.step[s][RING_BOW], P[SP_BON] ? live.bow_env[s] : live.hand_env[s],
+                  scol[s], 0, !on);
     }
     const char *cn = engine_chord_name();
     gfx_text((SCREEN_W - gfx_text_w(cn, FONT_SMALL)) / 2, SCREEN_H - 34, cn, C_DIM, FONT_SMALL);
@@ -1167,6 +1352,7 @@ void ui_draw(uint32_t *fb)
     case PAGE_PLAY: draw_play(); break;
     case PAGE_SOUND: draw_sound(); break;
     case PAGE_COMPOSE: draw_compose(); break;
+    case PAGE_SONG: draw_song(); break;
     default: draw_mix(); break;
     }
     draw_footer();

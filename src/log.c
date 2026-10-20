@@ -132,7 +132,7 @@ static void status(AudioTiming *t, double secs)
     if (load > 60)
         put("HINT", "audio load %.0f%%: raise JD_BUFFER to 2048 or set JD_RATE=44100 in launch.sh", load);
     if (t && t->late)
-        put("HINT", "%u late audio callbacks (crackles): raise JD_BUFFER, or fewer sympathetic strings", t->late);
+        put("HINT", "%u audio dropouts (crackles): raise JD_BUFFER, or fewer sympathetic strings", t->late);
     if (s.clips)
         put("HINT", "%u samples near full scale: MASTER above 80 drives the clipper; lower it for a cleaner sound", s.clips);
     if (lev > 14.f && s.peak < 0.2f)

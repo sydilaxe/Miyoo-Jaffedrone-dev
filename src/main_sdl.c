@@ -30,15 +30,26 @@ static void unlock(void) { SDL_UnlockAudio(); }
 /* the audio callback's timing for the log: time spent, and gaps longer
  * than one and a half buffers (the device ran dry: a crackle) */
 static AudioTiming timing;
-static uint64_t last_cb_us;
+static uint64_t clock0_us, made_us;
 
+/* a dropout is when the device has played everything we made: real time
+ * has run ahead of the audio produced by more than the device's buffers
+ * (two fragments here). Drivers that call twice in a row and then wait
+ * are fine; only a true gap counts. */
 static void audio_cb(void *ud, Uint8 *stream, int len)
 {
     (void)ud;
     uint64_t t0 = now_us();
-    if (last_cb_us && timing.buffer_us && t0 - last_cb_us > timing.buffer_us * 3 / 2)
-        timing.late++;
-    last_cb_us = t0;
+    if (!clock0_us)
+        clock0_us = t0;
+    else if (timing.buffer_us) {
+        uint64_t real = t0 - clock0_us;
+        if (real > made_us + 3ULL * timing.buffer_us) {
+            timing.late++;
+            clock0_us = t0 - made_us; /* start counting again from here */
+        }
+    }
+    made_us += timing.buffer_us;
     engine_render((int16_t *)stream, len / 4);
     uint32_t spent = (uint32_t)(now_us() - t0);
     timing.calls++;

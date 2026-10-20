@@ -6,3 +6,4 @@ dist/Jaffedrone/jaffedrone.sav.tmp
 dist/Jaffedrone/log.txt
 dist/Jaffedrone/jaffedrone_log.txt*
 dist/Jaffedrone/jaffedrone.cfg
+dist/Jaffedrone/preset_*.jds

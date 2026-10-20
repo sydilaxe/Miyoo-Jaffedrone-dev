@@ -10,13 +10,14 @@ enum {
     BTN_COUNT
 };
 
-enum { PAGE_PLAY, PAGE_SOUND, PAGE_COMPOSE, PAGE_MIX, PAGE_COUNT };
+enum { PAGE_PLAY, PAGE_SOUND, PAGE_COMPOSE, PAGE_MIX, PAGE_SONG, PAGE_COUNT };
 
 /* Set by the platform to serialise UI edits against the audio callback. */
 extern void (*ui_lock)(void);
 extern void (*ui_unlock)(void);
 
 void ui_init(void);
+void ui_set_dir(const char *dir); /* where presets are kept (default: here) */
 void ui_button(int btn, int down);
 void ui_tick(int ms);
 void ui_draw(uint32_t *fb);

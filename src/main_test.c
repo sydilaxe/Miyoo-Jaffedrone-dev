@@ -163,13 +163,14 @@ int main(int argc, char **argv)
     const char *out = argc > 1 ? argv[1] : ".";
     char path[512];
     static uint32_t fb[SCREEN_W * SCREEN_H];
+    ui_set_dir(out);
     song_default();
     engine_init(RATE);
     engine_set_playing(1);
 
     const int secs = 12, chunk = RATE / 100;
     int16_t *pcm = malloc(sizeof(int16_t) * 2 * RATE * secs);
-    static const char *const pages[PAGE_COUNT] = {"play", "sound", "compose", "mix"};
+    static const char *const pages[PAGE_COUNT] = {"play", "sound", "compose", "mix", "song"};
     for (int t = 0, f = 0; t < secs * 100; t++, f += chunk) {
         engine_render(pcm + 2 * f, chunk);
         ui_tick(10);
@@ -964,6 +965,73 @@ int main(int argc, char **argv)
             printf("undertones %s SUB %2d: 110 Hz %.0f, 55 Hz %.0f, 36.7 Hz %.0f\n", eng ? "WIND   " : "STRINGS", sub, e[0], e[1], e[2]);
         }
 
+    /* presets: save YAMAN to slot 3, change, load it back, peek, clear */
+    {
+        char p3[512];
+        Song t;
+        snprintf(p3, sizeof p3, "%s/preset_03.jds", out);
+        song_default();
+        engine_set_scale(6);
+        song_save(p3);
+        engine_set_scale(11);
+        int before = song.gp[GP_SCALE];
+        int ok = song_load(p3);
+        int peek = song_peek(p3, &t);
+        printf("presets: saved YAMAN, changed to %s, loaded back -> %s (load %d, peek %d scale %d)\n", engine_scale_name(before),
+               engine_scale_name(song.gp[GP_SCALE]), ok, peek, t.gp[GP_SCALE]);
+    }
+    /* chord memory: record four chords, then play them back in order */
+    {
+        song_default();
+        engine_prog_mode(PROG_RECORD);
+        for (int i = 0; i < 3; i++)
+            engine_next_chord();
+        int n = song.prog_n, rec[4][NS];
+        memcpy(rec, song.prog_note, sizeof rec);
+        engine_prog_mode(PROG_PLAY);
+        int match = 0;
+        for (int i = 0; i < 8; i++) {
+            engine_next_chord();
+            match += !memcmp(song.sp[0], song.sp[0], 4) && song.sp[1][SP_NOTE] == rec[i % n][1] && song.sp[3][SP_NOTE] == rec[i % n][3];
+        }
+        printf("chord memory: %d chords kept [%s %s %s %s], 8 changes in PLAY matched the memory %d/8\n", n, song.prog_name[0],
+               song.prog_name[1], song.prog_name[2], song.prog_name[3], match);
+    }
+    /* key lock and mode: EQUAL in D Phrygian, locked; chords stay in mode and in tune */
+    {
+        song_default();
+        engine_set_scale(0);
+        song.gp[GP_ROOT] = 50;
+        song.gp[GP_MODALITY] = MODAL_PHRYGIAN;
+        song.gp[GP_KEYLOCK] = 1;
+        static const int phryg[7] = {0, 1, 3, 5, 7, 8, 10};
+        int out_of_mode = 0, detuned = 0;
+        for (int i = 0; i < 40; i++) {
+            engine_next_chord();
+            for (int s = 0; s < NS; s++) {
+                int pc = ((song.sp[s][SP_NOTE] % 12) + 12) % 12, in = 0;
+                for (int k = 0; k < 7; k++)
+                    in |= pc == phryg[k];
+                out_of_mode += !in;
+                detuned += song.sp[s][SP_FINE] != 0;
+            }
+        }
+        printf("key lock, D Phrygian: notes outside the mode %d, detuned notes %d (of 200)\n", out_of_mode, detuned);
+    }
+    /* drone release: RELEASE 0 vs 100 (10 s), level 1 s after START stops it */
+    for (int rel = 0; rel <= 100; rel += 100) {
+        song_default();
+        song.gp[GP_RELEASE] = rel;
+        song.fx[FX_DMIX] = song.fx[FX_VSEND] = 0;
+        engine_init(RATE);
+        engine_set_playing(1);
+        engine_render(pcm, RATE * 3);
+        double on = rms_of(pcm, RATE * 2, RATE);
+        engine_set_playing(0);
+        engine_render(pcm, RATE);
+        printf("release %3d: rms playing %.0f, 0.9 s after stop %.0f\n", rel, on, rms_of(pcm, RATE * 9 / 10, RATE / 10));
+    }
+
     /* DSP benchmark: 30 s of the default drone */
     song_default();
     engine_init(RATE);
@@ -992,6 +1060,24 @@ int main(int argc, char **argv)
     shot(out, "wind_play", fb);
     next_page();
     shot(out, "wind_sound", fb);
+    {
+        /* SONG with a progression recorded and two presets */
+        engine_prog_mode(PROG_RECORD);
+        for (int i = 0; i < 5; i++)
+            engine_next_chord();
+        engine_prog_mode(PROG_PLAY);
+        engine_next_chord();
+        engine_next_chord();
+        char pp[512];
+        snprintf(pp, sizeof pp, "%s/preset_01.jds", out);
+        song_save(pp);
+        for (int i = 0; i < PAGE_COUNT - 2; i++)
+            next_page(); /* SOUND -> SONG */
+        ui_set_dir(out);
+        shot(out, "song", fb);
+        next_page(); /* back to PLAY */
+        next_page();
+    }
     for (int i = 0; i < PAGE_COUNT - 1; i++)
         next_page();
     snprintf(path, sizeof path, "%s/wind.wav", out);
