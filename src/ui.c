@@ -41,6 +41,10 @@ static int quiet; /* PLAY: the quiet view, strings and rings only */
 static int l2_used, r2_used;
 static int bowing = -1; /* the string bowed by hand (R1 held) */
 static int start_used;  /* START took part in a page change */
+/* some button drivers send a quick release and press while a button is
+ * held: a bow survives a gap this short, and a pluck is not repeated */
+#define REPEAT_GAP_MS 70
+static int bow_release_ms, l1_up_ms = -1000;
 static int held[BTN_COUNT], hold_ms[BTN_COUNT], rep_ms[BTN_COUNT], rep_n[BTN_COUNT];
 static int quit, changed, now_ms, toast_ms;
 static char toast[48];
@@ -363,12 +367,8 @@ static void action(int b, int repeats)
             say("STRING %d %s", cs + 1, song.on[cs] ? "ON" : "MUTED");
         }
         return;
-    case BTN_B: /* pluck that string, or all of them */
-        if (cs >= 0)
-            engine_pluck(cs);
-        else
-            for (int s = 0; s < NS; s++)
-                engine_pluck(s);
+    case BTN_B: /* pluck that string, or the one selected on PLAY */
+        engine_pluck(cs >= 0 ? cs : cur_s);
         return;
     }
 }
@@ -396,11 +396,18 @@ void ui_button(int b, int down)
         return;
     }
     if (b == BTN_R1 && !down && bowing >= 0) {
-        ui_lock();
-        engine_bow(bowing, 0);
-        ui_unlock();
-        bowing = -1;
+        bow_release_ms = REPEAT_GAP_MS; /* stops in ui_tick unless R1 comes back */
         return;
+    }
+    if (b == BTN_R1 && down && bowing >= 0) {
+        bow_release_ms = 0; /* still bowing the same string */
+        return;
+    }
+    if (b == BTN_L1 && page == PAGE_PLAY && !held[BTN_START]) {
+        if (!down)
+            l1_up_ms = now_ms;
+        else if (now_ms - l1_up_ms < REPEAT_GAP_MS)
+            return; /* a glitch, not a new pluck */
     }
     if (b == BTN_START) {
         if (down)
@@ -423,6 +430,12 @@ void ui_button(int b, int down)
 void ui_tick(int ms)
 {
     now_ms += ms;
+    if (bow_release_ms > 0 && (bow_release_ms -= ms) <= 0 && bowing >= 0 && !held[BTN_R1]) {
+        ui_lock();
+        engine_bow(bowing, 0);
+        ui_unlock();
+        bowing = -1;
+    }
     if (toast_ms > 0)
         toast_ms -= ms;
     for (int b = 0; b < BTN_COUNT; b++) {
@@ -583,7 +596,7 @@ static void draw_footer(void)
     static const char *const hints[PAGE_COUNT] = {
         "A:ON/OFF B:FEWER X:ROTATE Y:NEW L1:PLUCK R1:BOW L2:EDIT R2:SOUND",
         "D-PAD:MOVE Y:- X:+ A:MUTE B:PLUCK L1/R1:PAGE SEL:CHORD",
-        "D-PAD:MOVE Y:- X:+ B:PLUCK ALL L1/R1:PAGE SEL:NEXT CHORD",
+        "D-PAD:MOVE Y:- X:+ B:PLUCK L1/R1:PAGE SEL:NEXT CHORD",
         "D-PAD:MOVE Y:- X:+ A:MUTE B:PLUCK L1/R1:PAGE SEL:CHORD",
     };
     const char *h = hints[page];

@@ -168,6 +168,55 @@ int main(int argc, char **argv)
         printf("controls: pages keep drone %d; A %d->%d; B wraps 1->%d then %d; X rotate ->%d; L1 pluck meter %.3f; START tap -> playing %d\n",
                playing_after_pages, on0, on1, wrapped, fewer, rot, m, live.playing);
         engine_set_playing(1);
+
+        /* hand playing touches only the selected string; a held R1 bows on
+         * through a driver's quick release-and-press; an L1 glitch does not
+         * pluck twice */
+        song_default();
+        engine_init(RATE);
+        engine_set_playing(1);
+        song.gp[GP_CHANGES] = 0;
+        song.fx[FX_SCOUNT] = 0;
+        for (int s = 0; s < NS; s++)
+            song.sp[s][SP_PON] = song.sp[s][SP_BON] = 0, song.sp[s][SP_BOW] = 0;
+        engine_render(pcm, RATE);
+        press(BTN_RIGHT), press(BTN_RIGHT); /* string 3 (from string 1) */
+        ui_button(BTN_R1, 1);
+        float mn = 1, others = 0;
+        for (int i = 0; i < 300; i++) { /* 3 s held, with a 20 ms glitch at 1.5 s */
+            if (i == 150)
+                ui_button(BTN_R1, 0);
+            if (i == 152)
+                ui_button(BTN_R1, 1);
+            engine_render(pcm, RATE / 100);
+            ui_tick(10);
+            if (i > 60)
+                mn = fminf(mn, live.meter[2]);
+            for (int s = 0; s < NS; s++)
+                if (s != 2)
+                    others = fmaxf(others, live.meter[s]);
+        }
+        ui_button(BTN_R1, 0);
+        for (int i = 0; i < 100; i++)
+            engine_render(pcm, RATE / 100), ui_tick(10);
+        float after = live.meter[2];
+        int plucks = 0;
+        float last = 0;
+        ui_button(BTN_L1, 1);
+        ui_button(BTN_L1, 0);
+        ui_tick(10);
+        ui_button(BTN_L1, 1); /* 10 ms later: a glitch */
+        for (int i = 0; i < 30; i++) {
+            engine_render(pcm, RATE / 100);
+            ui_tick(10);
+            float m = live.meter[2];
+            if (m > last * 1.5f && m > 0.3f)
+                plucks++;
+            last = m;
+        }
+        ui_button(BTN_L1, 0);
+        printf("hand: string 3 bowed by R1 stays at least %.3f through a glitch (others at most %.3f), %.3f a second after release; L1 + glitch -> %d pluck\n",
+               mn, others, after, plucks);
     }
 
     snprintf(path, sizeof path, "%s/drone.wav", out);

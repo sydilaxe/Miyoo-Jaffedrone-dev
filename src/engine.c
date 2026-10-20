@@ -1387,7 +1387,10 @@ void engine_render(int16_t *out, int frames)
                 st->bow_lp += (fnoise() - st->bow_lp) * bow_col[s];
                 /* the hand bow opens the bow and presses harder, even at BOW 0 */
                 st->bow_env += ((float)(st->bow_open | st->hand) - st->bow_env) * (st->hand ? hand_k : bow_k[s]);
-                float ex = st->bow_lp * (bow_amp[s] + st->hand * 0.012f) * m_bow * headroom * play_g * st->bow_env;
+                /* the hand bow presses hard and keeps the string singing at a
+                 * full, steady level for as long as it is held */
+                float ex = st->hand ? st->bow_lp * (bow_amp[s] + 0.09f) * fmaxf(0.f, 1.f - st->env * 1.4f) * play_g * st->bow_env
+                                    : st->bow_lp * bow_amp[s] * m_bow * headroom * play_g * st->bow_env;
                 /* the other strings, heard through the bridge */
                 ex += couple * (bridge - st->last_y);
                 st->last_y = y * st->gain;

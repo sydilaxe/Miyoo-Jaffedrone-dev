@@ -171,8 +171,8 @@ on the shoulder buttons.
 | B | fewer pulses, wrapping back to all |
 | X | rotate the pattern |
 | Y | a new simple pattern |
-| L1 | pluck the string by hand |
-| R1 (hold) | bow the string by hand |
+| L1 | pluck the selected string by hand |
+| R1 (hold) | bow the selected string by hand: it swells in and sings steadily for as long as R1 is held |
 | L2 + up / down | more / fewer steps |
 | L2 + left / right | step length (right = faster) |
 | L2 + X | more pulses |
@@ -194,7 +194,8 @@ on the shoulder buttons.
 | MENU | exit |
 
 **On SOUND, COMPOSE and MIX:** the d-pad moves to the nearest control in that direction, and Y / X lowers or
-raises it. On a string's control, A mutes or unmutes that string and B plucks it. Elsewhere, B plucks all five.
+raises it. On a string's control, A mutes or unmutes that string and B plucks it. Elsewhere, B plucks the
+string selected on PLAY. Hand playing only ever plays the selected string; the others keep to their rings.
 
 Songs from earlier versions load as they sounded:
 
