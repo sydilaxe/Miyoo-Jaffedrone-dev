@@ -19,6 +19,9 @@ A noise "bow" keeps the string ringing, held in check by the loop's own level. P
 - **POS:** the pick position.
 - **BUZZ:** a jawari-like bridge. A strong note buzzes, and the buzz blooms and fades as the note decays, as
   on a tanpura or sitar.
+- **HARM:** a light touch at a node, like a harmonic on a guitar or a flageolet on a violin. Touching at a half,
+  a third, a quarter or a fifth of the string brings out the 2nd, 3rd, 4th or 5th harmonic, which blooms out
+  of the note with a glassy tone.
 
 Shared by all five strings (SOUND page, bottom rows):
 
@@ -59,7 +62,12 @@ Each string has two Euclidean rings (steps, pulses, rotation) that share one ste
 - **The bow ring** swells the bow in and out on its pulses, so the string breathes. With the bow ring off, the
   bow plays continuously.
 
-Each ring can be switched on and off. The rings are meant to be simple and slow, and each string keeps its own.
+Each ring can be switched on and off and has a **CHANCE**: how often each pulse actually plays. Below 100%
+the patterns breathe instead of looping exactly. The rings are meant to be simple and slow, and each string
+keeps its own.
+
+Each string also has a **GATE** (MIX page): how far its sound follows its own bow ring. At 0 the bow ring
+only shapes the bowing; at 100 it gates the string's level as well. This replaces the old master gate.
 You can always pluck or bow a string by hand on top of the rings, and mute any string from the PLAY page.
 
 ## Tunings and progressions
@@ -89,6 +97,11 @@ How the chord progressions move, and the COMPOSE controls that shape them:
   the bass sometimes holds as a pedal.
 - **EVOLVE:** the chance that a chord change also nudges one string's rhythm: a ring rotates, gains or loses
   a pulse or a step, or a bow ring starts or stops breathing.
+- **CHANCE:** the chance that a scheduled change (CHANGES) actually happens, so the harmony sometimes stays
+  longer.
+- **RELATE:** how many of the notes now sounding the next chord must keep: FREE, 1 TONE or 2 TONES. With 1
+  or 2, every change grows out of the one before. For ragas, RELATE holds that many upper voices still; for
+  gamelan, the block moves by kempyung so one tone stays.
 
 Note names are shown in each scale's own language:
 
@@ -110,14 +123,38 @@ The strings are not re-plucked on a change. They keep ringing and slide to the n
   corners, and the pulses are joined into an inner shape that lights on each pluck and fills as the bow swells.
   The band at the top shows the scale, the current chord and the bars until the next change.
 - **The quiet view** (tap L2 on PLAY): only the five strings and their rings, for meditation.
-- **SOUND:** tone and sound shaping. Each string's note, fine tuning, bow, decay, brightness, fold,
+- **SOUND:** tone and sound shaping. Each string's note, harmonic touch, bow, decay, brightness, fold,
   stiffness, pick position and buzz, then coupling, body, tone and the sympathetic strings.
 - **COMPOSE:** the algorithmic side. On the left, the scale is drawn as a polygon, each degree at its true
   angle in the octave. The current chord is a shape inside it, the sympathetic strings are dots outside, and
   below are the chord, the chords before it and the bars until the next change. On the right: scale, root,
-  voicing, changes, glide, tempo, MOTION, HOME, COLOR, EVOLVE, drift, Wi-Fi sync and the two LFOs.
-- **MIX:** each string's level and pan with a meter, master, the sympathetic strings' level, then delay, reverb
-  and gate.
+  voicing, changes, CHANCE, glide, tempo, MOTION, HOME, COLOR, EVOLVE, RELATE, drift, Wi-Fi sync and the
+  two LFOs.
+- **MIX:** each string's level, pan and gate with a meter, master, the sympathetic strings' level, then delay,
+  reverb and binaural.
+
+## Binaural
+
+Binaural is built into the strings, not added as a separate tone. The sound of the strings is shifted a few
+hertz down in the left ear and up in the right, so every overtone of every string, and the sympathetic
+strings, beats between the ears at the same rate. Listen on headphones.
+
+- **BEAT:** the beat rate, 0.5–12 Hz. The display names the band it falls in (DELTA below 4 Hz, THETA
+  4–8 Hz, ALPHA above). OFF by default.
+- **DEPTH:** how much of the shifted sound is used.
+- **LOCK:** TEMPO puts the beat on the nearest power-of-two multiple of the tempo, so it pulses with the
+  rhythm.
+
+## Sound quality
+
+- Each string reads its delay line with four-point Hermite interpolation. Strings keep their brightness on
+  every pass instead of being dulled by linear interpolation, and decay evenly across the range.
+- The wavefolder is anti-aliased: it averages the fold over each sample from its antiderivative.
+- The reverb is an eight-line feedback delay network with damping in every line and slow modulation, for a
+  dense tail that doesn't ring. TIME runs from 0.5 to 10 seconds.
+- A 3 ms look-ahead leveller keeps peaks clean, and the output is rounded to 16 bits with triangular
+  dither, so quiet tails fade smoothly.
+- Denormal numbers are flushed to zero in the audio thread, so long tails stay cheap on the ARM chip.
 
 ## Controls
 
@@ -138,7 +175,7 @@ The strings are not re-plucked on a change. They keep ringing and slide to the n
 | tap L2 | the quiet view |
 | R2 + left / right | previous / next scale |
 | R2 + up / down | tone (cutoff) |
-| R2 + X / Y | coupling more / less |
+| R2 + X / Y | the selected ring's chance more / less (10% steps) |
 | R2 + A / B | body more / less |
 
 **Everywhere**
@@ -157,7 +194,8 @@ Songs from earlier versions load as they sounded:
 
 - the scale is set to EQUAL;
 - each old PLUCK setting becomes a one-pulse pluck ring with the same timing;
-- COUPLE, BODY, CHANGES, EVOLVE and the sympathetic strings are off.
+- COUPLE, BODY, CHANGES, EVOLVE, RELATE, binaural and the sympathetic strings are off, and every pulse plays.
+- The old master gate is gone, so songs that used it play ungated.
 
 ## Build
 
@@ -170,7 +208,7 @@ Songs from earlier versions load as they sounded:
   - coupling and the bodies;
   - the rings;
   - each scale's progression;
-  - the gate;
+  - binaural beats, harmonic touch, chance, RELATE and the string gates;
   - Wi-Fi sync;
   - DSP load.
 - `make install SD=/path/to/card` copies the app into `App/`.

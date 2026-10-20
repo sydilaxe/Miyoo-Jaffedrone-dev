@@ -465,28 +465,146 @@ int main(int argc, char **argv)
         printf("\n");
     }
 
-    /* gate at 1/8, 50%: the level must chop between loud and near-silent */
-    song_default();
-    engine_init(RATE);
-    engine_set_playing(1);
-    song.fx[FX_GRATE] = 3;
-    song.fx[FX_GDUTY] = 5;
-    song.fx[FX_GSMOOTH] = 10;
-    song.fx[FX_DMIX] = 0;
-    song.fx[FX_VSEND] = 0;
-    engine_render(pcm, RATE * 3);
-    engine_render(pcm, RATE);
-    {
-        double lo = 1e9, hi = 0;
-        int win = RATE / 100;
-        for (int i = 0; i + win <= RATE; i += win) {
-            double r = rms_of(pcm, i, win);
-            if (r < lo)
-                lo = r;
-            if (r > hi)
-                hi = r;
+    /* binaural: the beat between the ears, from the product of left and
+     * right (lowpassed), whose zero crossings come at twice the beat */
+    for (int beat = 8; beat <= 16; beat += 8) {
+        song_default();
+        engine_init(RATE);
+        engine_set_playing(1);
+        song.gp[GP_CHANGES] = 0;
+        song.fx[FX_SCOUNT] = 0;
+        song.fx[FX_DMIX] = song.fx[FX_VSEND] = 0;
+        song.fx[FX_BINBEAT] = beat;
+        song.lfo[0][LP_DEPTH] = 0;
+        song.gp[GP_DRIFT] = 0;
+        for (int s = 0; s < NS; s++)
+            song.on[s] = s == 2, song.sp[s][SP_PON] = 0, song.sp[s][SP_PAN] = 0;
+        engine_render(pcm, RATE * 2);
+        engine_render(pcm, RATE * 4);
+        double lp = 0, last = 0;
+        int zc = 0;
+        for (int i = 0; i < RATE * 4; i++) {
+            double m = (double)pcm[2 * i] * pcm[2 * i + 1];
+            lp += (m - lp) * 0.0005;
+            if (i > RATE / 2) {
+                double mean = 0; /* crossings of the slow product around its own mean */
+                (void)mean;
+            }
+            if (i > 0 && ((lp - 3e6 > 0) != (last - 3e6 > 0)))
+                zc++;
+            last = lp;
         }
-        printf("gate 1/8 50%%: 10 ms rms min %.0f max %.0f\n", lo, hi);
+        /* a cleaner reading: correlate left and right in 50 ms windows */
+        int flips = 0, prev = 0;
+        for (int w = 0; w + 2400 <= RATE * 4; w += 1200) {
+            double c = 0;
+            for (int i = w; i < w + 2400; i++)
+                c += (double)pcm[2 * i] * pcm[2 * i + 1];
+            int sg = c > 0 ? 1 : -1;
+            if (prev && sg != prev)
+                flips++;
+            prev = sg;
+        }
+        printf("binaural %.1f Hz: L/R correlation flips %.1f per s (want about %.1f)\n", beat * 0.5, flips / 4.0, beat * 0.5 * 2);
+    }
+
+    /* HARM: string 1 (A2) touched at 1/2 sounds an octave up: the waveform
+     * repeats every half period */
+    for (int h = 0; h <= 1; h++) {
+        song_default();
+        engine_init(RATE);
+        engine_set_playing(1);
+        song.gp[GP_CHANGES] = 0;
+        song.fx[FX_SCOUNT] = 0;
+        song.fx[FX_DMIX] = song.fx[FX_VSEND] = 0;
+        song.fx[FX_BODY] = 0;
+        song.lfo[0][LP_DEPTH] = 0;
+        song.gp[GP_DRIFT] = 0;
+        for (int s = 0; s < NS; s++)
+            song.on[s] = s == 0, song.sp[s][SP_PON] = 0;
+        song.sp[0][SP_HARM] = h;
+        song.sp[0][SP_BOW] = 60;
+        engine_render(pcm, RATE * 3);
+        int T = RATE / 110;
+        double c0 = 0, ch = 0, cf = 0;
+        for (int i = RATE; i < RATE * 2; i++) {
+            c0 += (double)pcm[2 * i] * pcm[2 * i];
+            ch += (double)pcm[2 * i] * pcm[2 * (i + T / 2)];
+            cf += (double)pcm[2 * i] * pcm[2 * (i + T)];
+        }
+        printf("HARM %s: correlation at half a period %.2f, at a period %.2f\n", h ? "2ND" : "OFF", ch / c0, cf / c0);
+    }
+
+    /* chance: string 1 E(4,4) at 1/4 with 50%% chance plucks about half the time */
+    {
+        song_default();
+        engine_init(RATE);
+        engine_set_playing(1);
+        song.gp[GP_CHANGES] = 0;
+        song.sp[0][SP_PPULSES] = 4;
+        song.sp[0][SP_PCHANCE] = 50;
+        int hits = 0;
+        float last = 0;
+        int blocks = (int)(64 * 60.0 / song.gp[GP_BPM] * 100); /* 64 beats */
+        for (int i = 0; i < blocks; i++) {
+            engine_render(pcm, RATE / 100);
+            if (live.flash[0][0] > last + 0.3f)
+                hits++;
+            last = live.flash[0][0];
+        }
+        printf("chance 50%%: %d plucks of 64 pulses\n", hits);
+    }
+
+    /* RELATE: how many notes each chord keeps from the one before */
+    for (int rel = 0; rel <= 2; rel++) {
+        song_default();
+        song.gp[GP_RELATE] = rel;
+        int kept = 0, changes = 40;
+        for (int i = 0; i < changes; i++) {
+            int before[NS], n = engine_scale_n();
+            for (int s = 0; s < NS; s++)
+                before[s] = ((song.sp[s][SP_NOTE] % n) + n) % n;
+            engine_next_chord();
+            int common = 0;
+            for (int a = 0; a < NS; a++) {
+                int pc = ((song.sp[a][SP_NOTE] % n) + n) % n, seen = 0;
+                for (int b = 0; b < a; b++)
+                    seen |= ((song.sp[b][SP_NOTE] % n) + n) % n == pc;
+                if (seen)
+                    continue;
+                for (int b = 0; b < NS; b++)
+                    if (before[b] == pc) {
+                        common++;
+                        break;
+                    }
+            }
+            kept += common;
+        }
+        printf("RELATE %d: on average %.2f notes kept per change\n", rel, kept / 40.0);
+    }
+
+    /* string GATE: with the bow ring breathing, GATE 100 makes the string's
+     * level follow it */
+    for (int g = 0; g <= 100; g += 100) {
+        song_default();
+        engine_init(RATE);
+        engine_set_playing(1);
+        song.gp[GP_CHANGES] = 0;
+        song.fx[FX_SCOUNT] = 0;
+        song.fx[FX_DMIX] = song.fx[FX_VSEND] = 0;
+        for (int s = 0; s < NS; s++)
+            song.on[s] = s == 4, song.sp[s][SP_PON] = 0;
+        song.sp[4][SP_BCHANCE] = 100;
+        song.sp[4][SP_GATE] = g;
+        engine_render(pcm, RATE * 3);
+        engine_render(pcm, RATE * 3);
+        double lo = 1e9, hi = 0;
+        for (int i = 0; i + 2400 <= RATE * 3; i += 2400) {
+            double r = rms_of(pcm, i, 2400);
+            lo = r < lo ? r : lo;
+            hi = r > hi ? r : hi;
+        }
+        printf("string gate %3d: 50 ms rms ranges %.0f .. %.0f\n", g, lo, hi);
     }
 
     /* wifi sync: a leader at 128 BPM 5.3 steps ahead; lock tempo and phase */
@@ -561,6 +679,7 @@ int main(int argc, char **argv)
         for (int s = 1; s < NS; s++)
             song.on[s] = 0;
         song.fx[FX_DMIX] = song.fx[FX_VSEND] = 0;
+        engine_init(RATE); /* no reverb tail left from before */
         engine_render(p, RATE);
         double before = rms_of(p, RATE / 2, RATE / 2);
         song.on[0] = 0;

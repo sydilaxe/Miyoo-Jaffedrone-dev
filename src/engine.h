@@ -8,11 +8,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define JD_VERSION "0.2.0"
+#define JD_VERSION "0.3.0"
 
 #define NS 5
-#define NSP 20 /* params per string */
-#define NGP 14 /* global params */
+#define NSP 24 /* params per string */
+#define NGP 16 /* global params */
 #define NLFO 2
 #define NLP 4  /* params per LFO */
 #define NFX 17 /* effect params */
@@ -23,7 +23,11 @@
  * pluck ring plucks on its pulses, the bow ring swells the bow on its pulses
  * (off: the bow plays continuously). Ring fields: on, steps, pulses, rotate. */
 enum { SP_NOTE, SP_FINE, SP_LEVEL, SP_BOW, SP_DECAY, SP_BRIGHT, SP_FOLD, SP_STIFF, SP_POS, SP_BUZZ,
-       SP_PON, SP_PSTEPS, SP_PPULSES, SP_PROT, SP_BON, SP_BSTEPS, SP_BPULSES, SP_BROT, SP_RATE, SP_PAN };
+       SP_PON, SP_PSTEPS, SP_PPULSES, SP_PROT, SP_BON, SP_BSTEPS, SP_BPULSES, SP_BROT, SP_RATE, SP_PAN,
+       SP_PCHANCE, SP_BCHANCE, SP_HARM, SP_GATE };
+/* SP_PCHANCE / SP_BCHANCE: the chance each pulse of the ring plays.
+ * SP_HARM: a light touch at a node (OFF, or the 2nd .. 5th harmonic).
+ * SP_GATE: how far the string's sound follows its own bow ring. */
 enum { RING_PLUCK, RING_BOW, NRING };
 #define RING_P(ring, field) (SP_PON + (ring) * 4 + (field)) /* field 0 on, 1 steps, 2 pulses, 3 rotate */
 #define NSOUND SP_PON /* sound params come first */
@@ -31,12 +35,17 @@ enum { RING_PLUCK, RING_BOW, NRING };
  * sevenths and suspensions; EVOLVE: chance a chord change also nudges a
  * string's rhythm */
 enum { GP_MODE, GP_SCALE, GP_ROOT, GP_CHANGES, GP_BPM, GP_DRIFT, GP_GLIDE, GP_CUTOFF, GP_MASTER, GP_SYNC,
-       GP_MOTION, GP_HOME, GP_COLOR, GP_EVOLVE };
+       GP_MOTION, GP_HOME, GP_COLOR, GP_EVOLVE, GP_CHANCE, GP_RELATE };
+/* GP_CHANCE: the chance a scheduled change happens. GP_RELATE: how many
+ * notes the next chord must share with the last (0 .. 2). */
 enum { LP_RATE, LP_SHAPE, LP_TARGET, LP_DEPTH };
 /* FX_S*: the sympathetic strings: how many, how they are tuned, their
  * octave, level and ring time */
-enum { FX_DTIME, FX_DFB, FX_DMIX, FX_VSEND, FX_VTIME, FX_VTONE, FX_GRATE, FX_GDUTY, FX_GSMOOTH, FX_SYMP, FX_BODY, FX_BTYPE,
-       FX_SCOUNT, FX_STUNE, FX_SOCT, FX_SLEVEL, FX_SRING };
+/* FX_BIN*: binaural. The strings are shifted down in the left ear and up
+ * in the right by half the beat each, so every partial beats between the
+ * ears. BEAT in half hertz (0 = off), DEPTH, LOCK (beat locked to tempo). */
+enum { FX_DTIME, FX_DFB, FX_DMIX, FX_VSEND, FX_VTIME, FX_VTONE, FX_BINBEAT, FX_BINDEPTH, FX_BINLOCK, FX_SYMP, FX_BODY,
+       FX_BTYPE, FX_SCOUNT, FX_STUNE, FX_SOCT, FX_SLEVEL, FX_SRING };
 enum { STUNE_SCALE, STUNE_CHORD, STUNE_CHORD9, STUNE_DRONE, STUNE_FIFTHS, NSTUNE };
 enum { BODY_WOOD, BODY_GOURD, BODY_BRONZE, BODY_HARMONIC, NBODY };
 enum { MODE_MONO, MODE_CHORD };
@@ -66,7 +75,7 @@ typedef struct {
     volatile uint32_t beat;
     volatile float phase[NS];  /* string animation phase */
     volatile float lfo_val[NLFO]; /* 0..1 for the display */
-    volatile float gate;          /* current gate gain for the display */
+    volatile float bin_hz;        /* the binaural beat now, in Hz */
     volatile int step[NS][NRING];   /* current step of each ring */
     volatile float flash[NS][NRING]; /* 1 on a hit, fading (display) */
     volatile float bow_env[NS];     /* how open each bow is now */

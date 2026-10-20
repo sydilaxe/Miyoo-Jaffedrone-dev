@@ -93,19 +93,19 @@ static void cell(int x, int y, int w, int h, int kind, int a, int b)
 }
 
 /* SOUND: per-string tone above, the shared resonance below */
-static const int sound_rows[9] = {SP_NOTE, SP_FINE, SP_BOW, SP_DECAY, SP_BRIGHT, SP_FOLD, SP_STIFF, SP_POS, SP_BUZZ};
+static const int sound_rows[9] = {SP_NOTE, SP_HARM, SP_BOW, SP_DECAY, SP_BRIGHT, SP_FOLD, SP_STIFF, SP_POS, SP_BUZZ};
 #define SOUND_Y 106
 #define SOUND_RH 30
 #define BAND_Y (SOUND_Y + 9 * SOUND_RH + 4)
 /* COMPOSE: the progression on the left, its controls on the right */
-static const int comp_a[6] = {GP_SCALE, GP_ROOT, GP_MODE, GP_CHANGES, GP_GLIDE, GP_BPM};
-static const int comp_b[6] = {GP_MOTION, GP_HOME, GP_COLOR, GP_EVOLVE, GP_DRIFT, GP_SYNC};
+static const int comp_a[7] = {GP_SCALE, GP_ROOT, GP_MODE, GP_CHANGES, GP_CHANCE, GP_GLIDE, GP_BPM};
+static const int comp_b[7] = {GP_MOTION, GP_HOME, GP_COLOR, GP_EVOLVE, GP_RELATE, GP_DRIFT, GP_SYNC};
 #define COMP_X 268
 #define COMP_CW 184
-#define LFO_Y 286
+#define LFO_Y 318
 /* MIX: a strip per string, master, then delay, reverb and gate */
-#define MIX_FX_Y 206
-#define MIX_FXC_Y 300
+#define MIX_FX_Y 244
+#define MIX_FXC_Y 330
 
 static void layout(int pg)
 {
@@ -124,24 +124,25 @@ static void layout(int pg)
             cell(i * cw + 3, BAND_Y + 36, cw - 6, 34, CK_F, 0, FX_SCOUNT + i);
         break;
     case PAGE_COMPOSE:
-        for (int r = 0; r < 6; r++) {
+        for (int r = 0; r < 7; r++) {
             cell(COMP_X, BODY_Y + r * 34, COMP_CW - 6, 31, CK_G, 0, comp_a[r]);
             cell(COMP_X + COMP_CW, BODY_Y + r * 34, COMP_CW - 6, 31, CK_G, 0, comp_b[r]);
         }
         for (int l = 0; l < NLFO; l++)
             for (int p = 0; p < NLP; p++)
-                cell(COMP_X + l * COMP_CW, LFO_Y + p * 41, COMP_CW - 6, 38, CK_L, l, p);
+                cell(COMP_X + l * COMP_CW, LFO_Y + p * 33, COMP_CW - 6, 30, CK_L, l, p);
         break;
     case PAGE_MIX:
         for (int s = 0; s < NS; s++) {
             cell(s * cw + 3, BODY_Y + 42, cw - 6, 31, CK_S, s, SP_LEVEL);
             cell(s * cw + 3, BODY_Y + 76, cw - 6, 31, CK_S, s, SP_PAN);
+            cell(s * cw + 3, BODY_Y + 110, cw - 6, 31, CK_S, s, SP_GATE);
         }
-        cell(3, BODY_Y + 112, 314, 31, CK_G, 0, GP_MASTER);
-        cell(323, BODY_Y + 112, 314, 31, CK_F, 0, FX_SLEVEL);
+        cell(3, BODY_Y + 146, 314, 31, CK_G, 0, GP_MASTER);
+        cell(323, BODY_Y + 146, 314, 31, CK_F, 0, FX_SLEVEL);
         for (int c = 0; c < 3; c++)
             for (int p = 0; p < 3; p++)
-                cell(c * 213 + 4, MIX_FXC_Y + p * 50, 205, 46, CK_F, 0, c * 3 + p);
+                cell(c * 213 + 4, MIX_FXC_Y + p * 42, 205, 38, CK_F, 0, c * 3 + p);
         break;
     }
 }
@@ -276,8 +277,13 @@ static void play_action(int b)
         case BTN_RIGHT: set_scale(song.gp[GP_SCALE] + 1); return;
         case BTN_UP: song.gp[GP_CUTOFF] = clampi(song.gp[GP_CUTOFF] + 2, 0, 100); say("TONE %d", song.gp[GP_CUTOFF]); return;
         case BTN_DOWN: song.gp[GP_CUTOFF] = clampi(song.gp[GP_CUTOFF] - 2, 0, 100); say("TONE %d", song.gp[GP_CUTOFF]); return;
-        case BTN_X: song.fx[FX_SYMP] = clampi(song.fx[FX_SYMP] + 2, 0, 100); say("COUPLE %d", song.fx[FX_SYMP]); return;
-        case BTN_Y: song.fx[FX_SYMP] = clampi(song.fx[FX_SYMP] - 2, 0, 100); say("COUPLE %d", song.fx[FX_SYMP]); return;
+        case BTN_X:
+        case BTN_Y: { /* the chance each pulse of the selected ring plays */
+            int *c = &song.sp[cur_s][ring ? SP_BCHANCE : SP_PCHANCE];
+            *c = clampi(*c + (b == BTN_X ? 10 : -10), 0, 100);
+            say("%d %s CHANCE %d%%", cur_s + 1, ring ? "BOW" : "PLUCK", *c);
+            return;
+        }
         case BTN_A: song.fx[FX_BODY] = clampi(song.fx[FX_BODY] + 5, 0, 100); say("BODY %d", song.fx[FX_BODY]); return;
         case BTN_B: song.fx[FX_BODY] = clampi(song.fx[FX_BODY] - 5, 0, 100); say("BODY %d", song.fx[FX_BODY]); return;
         }
@@ -561,7 +567,7 @@ static void draw_footer(void)
     if (page == PAGE_PLAY && held[BTN_L2])
         h = "L2+ A:MUTE STRING X/Y:STEPS <>:ROTATE ^v:RATE B:NEW RING";
     else if (page == PAGE_PLAY && held[BTN_R2])
-        h = "R2+ <>:SCALE ^v:TONE X/Y:COUPLE A/B:BODY";
+        h = "R2+ X/Y:RING CHANCE <>:SCALE ^v:TONE A/B:BODY";
     gfx_fill(0, FOOTER_Y, SCREEN_W, SCREEN_H - FOOTER_Y, C_PANEL);
     gfx_fill(0, FOOTER_Y, 4, SCREEN_H - FOOTER_Y, C_COPPER);
     gfx_text(12, FOOTER_Y + 2, h, C_DIM, FONT_SMALL);
@@ -701,7 +707,7 @@ static void draw_compose(void)
     /* the chord now, and the ones before it fading down the roof */
     const char *cn = engine_chord_name();
     gfx_text((int)cx - gfx_text_w(cn, FONT_LARGE) / 2, BODY_Y + 254, cn[0] ? cn : "-", C_SAND, FONT_LARGE);
-    for (int i = 1; i < 5; i++) {
+    for (int i = 1; i < 4; i++) {
         const char *h = engine_chord_history(i);
         if (!h[0])
             break;
@@ -751,10 +757,10 @@ static void draw_mix(void)
         gfx_fill(pp - 1, my - 4, 3, 13, C_TEXT);
     }
     int mm = (int)(628 * fminf(1.f, live.master_meter));
-    gfx_fill(6, BODY_Y + 146, 628, 3, C_PANEL2);
-    gfx_fill(6, BODY_Y + 146, mm, 3, live.master_meter > 0.95f ? C_RED : C_SEA);
+    gfx_fill(6, BODY_Y + 180, 628, 3, C_PANEL2);
+    gfx_fill(6, BODY_Y + 180, mm, 3, live.master_meter > 0.95f ? C_RED : C_SEA);
 
-    static const char *const names[3] = {"DELAY", "REVERB", "GATE"};
+    static const char *const names[3] = {"DELAY", "REVERB", "BINAURAL"};
     for (int c = 0; c < 3; c++) {
         int x = c * 213 + 4, w = 205;
         uint32_t col = c == 0 ? C_COPPER : c == 1 ? C_SAND : C_SEA;
@@ -773,15 +779,22 @@ static void draw_mix(void)
             int len = (int)(gw * (0.3f + 0.7f * song.fx[FX_VTIME] / 100.f));
             gfx_tri(gx, gy, gx + len, gy + gh, gx, gy + gh, gfx_mix(C_PANEL2, col, 0.3f + 0.6f * song.fx[FX_VSEND] / 100.f));
         }
-        else { /* the gate over a beat, live gain on the right */
-            int on = song.fx[FX_GRATE] > 0, duty = song.fx[FX_GDUTY];
-            for (int i = 0; i < 4; i++) {
-                int sw = gw / 4, ow = sw * duty / 10;
-                gfx_fill(gx + i * sw, gy + 10, sw - 4, gh - 10, C_PANEL2);
-                gfx_fill(gx + i * sw, gy + 10, on ? ow : sw - 4, gh - 10, on ? gfx_mix(C_PANEL2, col, 0.7f) : C_LINE);
+        else { /* two waves, left and right, sliding past each other at the beat */
+            float hz = live.bin_hz, d = song.fx[FX_BINDEPTH] / 100.f;
+            float drift = hz > 0.f ? 6.2831853f * fmodf(now_ms * 0.001f * hz, 1.f) * d : 0.f;
+            for (int w = 0; w < 2; w++) {
+                int py = 0;
+                uint32_t wc = hz > 0.f ? (w ? col : gfx_mix(col, C_SAND, 0.5f)) : C_LINE;
+                for (int i = 0; i <= gw; i++) {
+                    float t = (float)i / gw * 6.2831853f * 3.f + (w ? drift : 0.f);
+                    int yy = gy + gh / 2 + (int)(sinf(t) * gh * 0.32f) + (w ? 0 : 0);
+                    if (i)
+                        gfx_fill(gx + i, yy < py ? yy : py, 1, abs(yy - py) + 2, wc);
+                    py = yy;
+                }
             }
-            int lh = (int)((gh - 10) * live.gate);
-            gfx_fill(gx + gw + 2, gy + gh - lh, 6, lh + 1, col);
+            gfx_text(x + w - 14 - gfx_text_w(hz > 0.f ? "L  R" : "OFF", FONT_SMALL), MIX_FX_Y + c * 6 + 6,
+                     hz > 0.f ? "L  R" : "OFF", C_DIM, FONT_SMALL);
         }
     }
     draw_cells();
@@ -891,10 +904,11 @@ static void draw_play(void)
         /* when the bow ring is off the bow holds: a steady bar across the ring */
         if (!P[SP_BON] && on && P[SP_BOW] > 0)
             gfx_fill((int)(cx - r * 0.6f), (int)bcy - 1, (int)(r * 1.2f), 3, gfx_mix(C_BG, col, 0.5f));
-        gfx_text((int)cx - gfx_text_w("PLUCK", FONT_SMALL) / 2, (int)(pcy + r + 4), "PLUCK", sel && ring == 0 ? col : C_DIM,
-                 FONT_SMALL);
-        gfx_text((int)cx - gfx_text_w("BOW", FONT_SMALL) / 2, (int)(bcy + r + 4), "BOW", sel && ring == 1 ? col : C_DIM,
-                 FONT_SMALL);
+        char lb[24];
+        snprintf(lb, sizeof lb, P[SP_PCHANCE] < 100 ? "PLUCK %d%%" : "PLUCK", P[SP_PCHANCE]);
+        gfx_text((int)cx - gfx_text_w(lb, FONT_SMALL) / 2, (int)(pcy + r + 4), lb, sel && ring == 0 ? col : C_DIM, FONT_SMALL);
+        snprintf(lb, sizeof lb, P[SP_BCHANCE] < 100 ? "BOW %d%%" : "BOW", P[SP_BCHANCE]);
+        gfx_text((int)cx - gfx_text_w(lb, FONT_SMALL) / 2, (int)(bcy + r + 4), lb, sel && ring == 1 ? col : C_DIM, FONT_SMALL);
     }
 }
 
