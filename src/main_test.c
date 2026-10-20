@@ -101,6 +101,62 @@ static double hz_near(const int16_t *pcm, int from, int n, double expect)
     return RATE / (best + off);
 }
 
+/* YIN pitch over 40 .. 1500 Hz (no expected pitch needed) */
+static double hz_yin(const int16_t *pcm, int from, int n)
+{
+    static double d[RATE / 40 + 2];
+    int maxlag = RATE / 40, minlag = RATE / 1500, best = -1;
+    double run = 0;
+    for (int lag = 1; lag <= maxlag; lag++) {
+        double acc = 0;
+        for (int i = from; i < from + n; i++) {
+            double x = pcm[2 * i] - pcm[2 * (i + lag)];
+            acc += x * x;
+        }
+        run += acc;
+        d[lag] = run > 0 ? acc * lag / run : 1;
+    }
+    for (int lag = minlag; lag < maxlag; lag++)
+        if (d[lag] < 0.15) {
+            while (lag + 1 < maxlag && d[lag + 1] < d[lag])
+                lag++;
+            best = lag;
+            break;
+        }
+    if (best < 0) {
+        double mn = 1e9;
+        for (int lag = minlag; lag < maxlag; lag++)
+            if (d[lag] < mn)
+                mn = d[lag], best = lag;
+    }
+    double y0 = d[best - 1], y1 = d[best], y2 = d[best + 1], off = 0.5 * (y0 - y2) / (y0 - 2 * y1 + y2);
+    if (!(off > -1 && off < 1))
+        off = 0;
+    return RATE / (best + off);
+}
+
+/* one wind (or string) voice alone: string 3 at a JUST MAJOR degree */
+static void solo(int engine, int ex, int mat, int note, int breath)
+{
+    song_default();
+    song.gp[GP_ENGINE] = engine;
+    song.gp[GP_EXCITE] = ex;
+    song.gp[GP_MATERIAL] = mat;
+    engine_init(RATE);
+    engine_set_playing(1);
+    song.gp[GP_CHANGES] = 0;
+    song.fx[FX_SCOUNT] = 0;
+    song.fx[FX_DMIX] = song.fx[FX_VSEND] = song.fx[FX_BODY] = 0;
+    song.gp[GP_DRIFT] = 0;
+    song.lfo[0][LP_DEPTH] = 0;
+    song.gp[GP_CUTOFF] = 100;
+    song.gp[GP_GLIDE] = 0;
+    for (int s = 0; s < NS; s++)
+        song.on[s] = s == 2, song.sp[s][SP_PON] = song.sp[s][SP_BON] = song.sp[s][SP_FINE] = 0;
+    song.sp[2][SP_BOW] = breath;
+    song.sp[2][SP_NOTE] = note;
+}
+
 int main(int argc, char **argv)
 {
     const char *out = argc > 1 ? argv[1] : ".";
@@ -777,6 +833,76 @@ int main(int argc, char **argv)
         free(p);
     }
 
+    /* WIND: every exciter in every material, three octaves: in tune within 25 cents */
+    {
+        static const char *const exn[NEXCITE] = {"LIP", "REED", "DOUBLE", "FLUTE", "FREE", "RECORDER", "BANSURI"};
+        for (int ex = 0; ex < NEXCITE; ex++) {
+            int ok = 0, tot = 0;
+            double worst = 0, lvl = 0;
+            for (int mat = 0; mat < NMATERIAL; mat++)
+                for (int note = -7; note <= 7; note += 7) {
+                    solo(ENG_WIND, ex, mat, note, 50);
+                    engine_render(pcm, RATE * 3);
+                    engine_render(pcm, RATE);
+                    double want = 110.0 * pow(2.0, note / 7.0) * (ex >= EX_FLUTE && ex != EX_FREE ? 2 : 1);
+                    double c = 1200 * log2(hz_yin(pcm, RATE / 4, RATE / 4) / want);
+                    tot++;
+                    ok += fabs(c) < 25;
+                    if (fabs(c) > fabs(worst))
+                        worst = c;
+                    lvl += rms_of(pcm, 0, RATE) / 12;
+                }
+            printf("wind %-8s: %2d/%d in tune (worst %+.0f cents), rms %.0f\n", exn[ex], ok, tot, worst, lvl);
+        }
+        /* overblowing by hand (R1 with L1 held): a flute jumps an octave, a reed a twelfth */
+        static const int obx[2] = {EX_FLUTE, EX_REED};
+        for (int k = 0; k < 2; k++) {
+            solo(ENG_WIND, obx[k], MAT_WOOD, 0, 50);
+            engine_render(pcm, RATE * 2);
+            double f0 = hz_yin(pcm, RATE, RATE / 4);
+            engine_bow(2, 1);
+            engine_overblow(2, 1);
+            engine_render(pcm, RATE * 2);
+            double f1 = hz_yin(pcm, RATE, RATE / 4);
+            engine_overblow(2, 0);
+            engine_bow(2, 0);
+            printf("overblow %s: %.1f Hz -> %.1f Hz (x%.2f, want x%d)\n", exn[obx[k]], f0, f1, f1 / f0, k ? 3 : 2);
+        }
+        /* the same combination on a string touches the 2nd harmonic */
+        solo(ENG_STRINGS, 0, 0, 0, 0);
+        engine_bow(2, 1);
+        engine_render(pcm, RATE * 2);
+        double a0 = hz_yin(pcm, RATE, RATE / 4);
+        engine_overblow(2, 1);
+        engine_render(pcm, RATE * 2);
+        double a1 = hz_yin(pcm, RATE, RATE / 4);
+        engine_bow(2, 0);
+        engine_overblow(2, 0);
+        printf("string harmonic by hand: %.1f Hz -> %.1f Hz (want x2)\n", a0, a1);
+    }
+
+    /* undertones: energy an octave and a twelfth below a 110 Hz voice */
+    for (int eng = 0; eng < NENGINE; eng++)
+        for (int sub = 0; sub <= 70; sub += 70) {
+            solo(eng, EX_REED, MAT_WOOD, 0, 60);
+            song.gp[GP_SUB] = sub;
+            song.gp[GP_SUBDIV] = SUB_OCT_TWELFTH;
+            engine_render(pcm, RATE * 3);
+            engine_render(pcm, RATE);
+            double e[3];
+            static const double fq[3] = {110.0, 55.0, 110.0 / 3.0};
+            for (int k = 0; k < 3; k++) {
+                double w = 2 * M_PI * fq[k] / RATE, c = 2 * cos(w), s1 = 0, s2 = 0;
+                for (int i = 0; i < RATE; i++) {
+                    double s0 = pcm[2 * i] + c * s1 - s2;
+                    s2 = s1;
+                    s1 = s0;
+                }
+                e[k] = sqrt(s1 * s1 + s2 * s2 - c * s1 * s2) / RATE;
+            }
+            printf("undertones %s SUB %2d: 110 Hz %.0f, 55 Hz %.0f, 36.7 Hz %.0f\n", eng ? "WIND   " : "STRINGS", sub, e[0], e[1], e[2]);
+        }
+
     /* DSP benchmark: 30 s of the default drone */
     song_default();
     engine_init(RATE);
@@ -786,6 +912,38 @@ int main(int argc, char **argv)
         engine_render(pcm, 1024);
     double secs_cpu = (double)(clock() - c0) / CLOCKS_PER_SEC;
     printf("dsp: 30 s rendered in %.2f s host cpu (%.1f%%)\n", secs_cpu, secs_cpu / 30.0 * 100.0);
+    song_default();
+    song.gp[GP_ENGINE] = ENG_WIND;
+    song.gp[GP_EXCITE] = EX_BANSURI;
+    song.gp[GP_SUB] = 50;
+    engine_init(RATE);
+    engine_set_playing(1);
+    c0 = clock();
+    for (int i = 0; i < 30 * RATE / 1024; i++)
+        engine_render(pcm, 1024);
+    secs_cpu = (double)(clock() - c0) / CLOCKS_PER_SEC;
+    printf("dsp WIND (bansuri, undertones): 30 s in %.2f s host cpu (%.1f%%)\n", secs_cpu, secs_cpu / 30.0 * 100.0);
+    /* WIND screens */
+    for (int i = 0; i < 300; i++) {
+        engine_render(pcm, RATE / 100);
+        ui_tick(10);
+    }
+    shot(out, "wind_play", fb);
+    next_page();
+    shot(out, "wind_sound", fb);
+    for (int i = 0; i < PAGE_COUNT - 1; i++)
+        next_page();
+    snprintf(path, sizeof path, "%s/wind.wav", out);
+    {
+        song_default();
+        song.gp[GP_ENGINE] = ENG_WIND;
+        song.gp[GP_EXCITE] = EX_BANSURI;
+        song.gp[GP_SUB] = 40;
+        engine_init(RATE);
+        engine_set_playing(1);
+        engine_render(pcm, RATE * 12);
+        write_wav(path, pcm, RATE * 12);
+    }
     free(pcm);
     return 0;
 }

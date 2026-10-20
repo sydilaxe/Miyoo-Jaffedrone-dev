@@ -8,11 +8,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define JD_VERSION "0.3.2"
+#define JD_VERSION "0.4.0"
 
 #define NS 5
 #define NSP 24 /* params per string */
-#define NGP 16 /* global params */
+#define NGP 22 /* global params */
 #define NLFO 2
 #define NLP 4  /* params per LFO */
 #define NFX 17 /* effect params */
@@ -35,7 +35,19 @@ enum { RING_PLUCK, RING_BOW, NRING };
  * sevenths and suspensions; EVOLVE: chance a chord change also nudges a
  * string's rhythm */
 enum { GP_MODE, GP_SCALE, GP_ROOT, GP_CHANGES, GP_BPM, GP_DRIFT, GP_GLIDE, GP_CUTOFF, GP_MASTER, GP_SYNC,
-       GP_MOTION, GP_HOME, GP_COLOR, GP_EVOLVE, GP_CHANCE, GP_RELATE };
+       GP_MOTION, GP_HOME, GP_COLOR, GP_EVOLVE, GP_CHANCE, GP_RELATE, GP_ENGINE, GP_EXCITE, GP_MATERIAL,
+       GP_SUB, GP_SUBDIV, GP_SUBRES };
+/* GP_SUB*: every voice can sound undertones: its pitch divided (an octave,
+ * a twelfth or two octaves below, or both octave and twelfth), as a
+ * resonance that rings (SUB RES) under the voice. */
+enum { SUB_OCT, SUB_TWELFTH, SUB_TWO_OCT, SUB_OCT_TWELFTH, NSUBDIV };
+/* GP_ENGINE: STRINGS or WIND. In WIND, each voice is a bore (a waveguide)
+ * driven by GP_EXCITE and made of GP_MATERIAL; the per-voice BOW, DECAY,
+ * STIFF, POS, BUZZ and HARM slots become BREATH, AIR, EMBOUCH, VIBRATO,
+ * GROWL and REGISTER, the pluck ring tongues and the bow ring breathes. */
+enum { ENG_STRINGS, ENG_WIND, NENGINE };
+enum { EX_LIP, EX_REED, EX_DOUBLE, EX_FLUTE, EX_FREE, EX_RECORDER, EX_BANSURI, NEXCITE };
+enum { MAT_WOOD, MAT_METAL, MAT_CERAMIC, MAT_GLASS, NMATERIAL };
 /* GP_CHANCE: the chance a scheduled change happens. GP_RELATE: how many
  * notes the next chord must share with the last (0 .. 2). */
 enum { LP_RATE, LP_SHAPE, LP_TARGET, LP_DEPTH };
@@ -87,6 +99,7 @@ extern Song song;
 extern Live live;
 
 const ParamDef *sparam_def(int p);
+const char *sparam_name(int p); /* the name for the current engine */
 const ParamDef *gparam_def(int p);
 const ParamDef *lparam_def(int p);
 const ParamDef *fparam_def(int p);
@@ -102,6 +115,7 @@ void engine_render(int16_t *out, int frames);
 void engine_set_playing(int on);
 void engine_pluck(int s);
 void engine_bow(int s, int on); /* bow by hand while held, over the rings */
+void engine_overblow(int s, int on); /* while bowing: overblow (wind) or touch a harmonic (strings) */
 void engine_next_chord(void);  /* the next chord of the progression */
 void engine_set_scale(int sc); /* retune: each string moves to the nearest degree */
 void engine_euclid_random(int s, int ring); /* a new simple rhythm for one ring */

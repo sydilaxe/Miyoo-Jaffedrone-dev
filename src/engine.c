@@ -5,7 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define SONG_MAGIC 0x4a445208u    /* JDR8: chance, RELATE, HARM, string gates, binaural (no master gate) */
+#define SONG_MAGIC 0x4a44520au    /* JDR10: WIND engine (ENGINE, EXCITER, MATERIAL) and undertones (SUB) */
+#define SONG_MAGIC_V8 0x4a445208u /* JDR8: chance, RELATE, HARM, string gates, binaural (v0.3) */
 #define SONG_MAGIC_V7 0x4a445207u /* JDR7: sympathetic strings, pan, MOTION/HOME/COLOR/EVOLVE (v0.2) */
 #define SONG_MAGIC_V6 0x4a445206u /* JDR6: scales, Euclidean rhythms, BUZZ, coupling, body (v0.1) */
 #define SONG_MAGIC_V5 0x4a445205u /* JDR5: GLIDE global (v0.0.3) */
@@ -59,6 +60,14 @@ typedef struct {
     int lfo[NLFO][NLP];
     int fx[NFX];
 } SongV7;
+typedef struct {
+    uint32_t magic;
+    int on[NS];
+    int sp[NS][NSP];
+    int gp[16];
+    int lfo[NLFO][NLP];
+    int fx[NFX];
+} SongV8;
 
 Song song;
 Live live;
@@ -121,7 +130,9 @@ static const ParamDef gparams[NGP] = {{"VOICING", 0, 1},   {"SCALE", 0, NSCALE -
                                       {"GLIDE", 0, 7},     {"CUTOFF", 0, 100},       {"MASTER", 0, 100},
                                       {"WIFI SYNC", 0, NSYNCMODE - 1}, {"MOTION", 0, 100},
                                       {"HOME", 0, 100},    {"COLOR", 0, 100},        {"EVOLVE", 0, 100},
-                                      {"CHANCE", 0, 100},  {"RELATE", 0, 2}};
+                                      {"CHANCE", 0, 100},  {"RELATE", 0, 2},          {"ENGINE", 0, NENGINE - 1},
+                                      {"EXCITER", 0, NEXCITE - 1}, {"MATERIAL", 0, NMATERIAL - 1},
+                                      {"SUB", 0, 100},     {"SUB DIV", 0, NSUBDIV - 1}, {"SUB RES", 0, 100}};
 static const ParamDef lparams[NLP] = {{"RATE", 0, 6}, {"SHAPE", 0, NSH - 1}, {"TARGET", 0, NLT - 1}, {"DEPTH", 0, 100}};
 static const ParamDef fparams[NFX] = {{"TIME", 0, 7},   {"FEEDBK", 0, 95}, {"MIX", 0, 100},
                                       {"SEND", 0, 100}, {"TIME", 0, 100},  {"TONE", 0, 100},
@@ -158,11 +169,31 @@ static const int def_sp[NS][NSP] = {{0, 0, 80, 35, 85, 45, 0, 0, 0, 0, 1, 4, 1, 
                                     {7, 3, 55, 40, 95, 55, 0, 0, 0, 0, 1, 3, 1, 1, 0, 3, 2, 0, 3, 22, 100, 100, 0, 0},
                                     {11, 0, 40, 50, 90, 65, 0, 0, 0, 0, 1, 7, 2, 3, 0, 7, 3, 0, 2, -12, 70, 100, 0, 0},
                                     {14, 2, 30, 55, 93, 70, 0, 0, 0, 0, 1, 6, 1, 2, 1, 5, 3, 0, 2, 12, 60, 80, 0, 0}};
-static const int def_gp[NGP] = {MODE_CHORD, 1, 45, 4, 72, 30, 3, 70, 80, SYNC_OFF, 50, 50, 45, 30, 75, 1};
+static const int def_gp[NGP] = {MODE_CHORD, 1, 45, 4, 72, 30, 3, 70, 80, SYNC_OFF, 50, 50, 45, 30, 75, 1,
+                                ENG_STRINGS, EX_FLUTE, MAT_WOOD, 0, SUB_OCT, 60};
+static const char *const engine_names[NENGINE] = {"STRINGS", "WIND"};
+static const char *const excite_names[NEXCITE] = {"LIP", "REED", "DOUBLE", "FLUTE", "FREE", "RECORDER", "BANSURI"};
+static const char *const material_names[NMATERIAL] = {"WOOD", "METAL", "CERAMIC", "GLASS"};
 static const int def_lfo[NLFO][NLP] = {{2, SH_SINE, LT_CUTOFF, 35}, {4, SH_TRI, LT_LEVEL, 0}};
 static const int def_fx[NFX] = {5, 45, 25, 35, 60, 55, 0, 100, 0, 30, 35, BODY_WOOD, 7, STUNE_CHORD, 1, 45, 70};
 
 const ParamDef *sparam_def(int p) { return &sparams[p]; }
+/* in WIND the string controls take on their wind meanings */
+const char *sparam_name(int p)
+{
+    if (song.gp[GP_ENGINE] == ENG_WIND)
+        switch (p) {
+        case SP_BOW: return "BREATH";
+        case SP_DECAY: return "AIR";
+        case SP_STIFF: return "EMBOUCH";
+        case SP_POS: return "VIBRATO";
+        case SP_BUZZ: return "GROWL";
+        case SP_HARM: return "REG";
+        case SP_PON: return "TONGUE";
+        case SP_BON: return "BREATH RING";
+        }
+    return sparams[p].name;
+}
 const ParamDef *gparam_def(int p) { return &gparams[p]; }
 const ParamDef *lparam_def(int p) { return &lparams[p]; }
 const ParamDef *fparam_def(int p) { return &fparams[p]; }
@@ -221,7 +252,8 @@ void sparam_format(int s, int p, char *b, int n)
     case SP_RATE: snprintf(b, n, "%s", rate_names[x]); return;
     case SP_HARM: {
         static const char *const hn[5] = {"OFF", "2ND", "3RD", "4TH", "5TH"};
-        snprintf(b, n, "%s", hn[x]);
+        static const char *const rn[5] = {"1ST", "2ND", "3RD", "4TH", "5TH"};
+        snprintf(b, n, "%s", song.gp[GP_ENGINE] == ENG_WIND ? rn[x] : hn[x]);
         return;
     }
     case SP_PCHANCE:
@@ -261,6 +293,15 @@ void gparam_format(int p, char *b, int n)
     case GP_GLIDE: snprintf(b, n, "%s", glide_names[x]); return;
     case GP_SYNC: snprintf(b, n, "%s", sync_names[x]); return;
     case GP_CHANCE: snprintf(b, n, "%d%%", x); return;
+    case GP_ENGINE: snprintf(b, n, "%s", engine_names[x]); return;
+    case GP_EXCITE: snprintf(b, n, "%s", excite_names[x]); return;
+    case GP_MATERIAL: snprintf(b, n, "%s", material_names[x]); return;
+    case GP_SUB: snprintf(b, n, x ? "%d" : "OFF", x); return;
+    case GP_SUBDIV: {
+        static const char *const dn[NSUBDIV] = {"OCT", "12TH", "2 OCT", "OCT+12"};
+        snprintf(b, n, "%s", dn[x]);
+        return;
+    }
     case GP_RELATE: {
         static const char *const rn[3] = {"FREE", "1 TONE", "2 TONES"};
         snprintf(b, n, "%s", rn[x]);
@@ -350,12 +391,25 @@ typedef struct {
     float burst_amp, burst_lp;
     float ap[2][2]; /* STIFF: two dispersive allpasses in the loop */
     float fold_x1;  /* FOLD: last input, for the anti-aliased folder */
+    /* WIND: the jet delay, a DC blocker, the lip resonator, breath and tongue */
+    float jet[2048];
+    int jw, chiff_n;
+    float dcx, dcy, lx1, lx2, lz1, lz2;
+    float tg, chiff, pr, vph, gr_lp, nlp, frph, fr_amp;
+    /* the player's ear: the sounding period from zero crossings of a
+     * lowpassed copy, and the bore correction that pulls it onto the note */
+    float tr_a, tr_b, tr_prev, tr_count, tr_period, corr;
     float midi_cur; /* GLIDE: the pitch slides here toward its target */
     int midi_set;
     float last_y;   /* last loop output, for the bridge */
     int bow_open;   /* bow ring: open on its pulses */
     float bow_env;  /* the bow swell following bow_open */
     int hand;       /* bowed by hand */
+    int over;       /* ... and overblown, or touched at a harmonic */
+    /* undertones: crossings of a lowpassed copy pulse resonators below */
+    float sb_a, sb_b, sb_prev, sb_r[2][2];
+    int sb_n;
+    float f_sound; /* the voice's pitch in Hz now */
     /* per sub-block targets, ramped */
     float D, D_cur, lvl, lvl_cur;
 } String;
@@ -427,8 +481,16 @@ static float midi_hz(float m) { return 440.f * exp2f((m - 69.f) / 12.f); }
 
 /* a pluck is a short burst of noise into the loop, about one period long
  * (at most 6 ms), shaped by a raised cosine so it has no hard edges */
+#define CHIFF_MS 0.03f
 static void string_pluck(String *s, float amp)
 {
+    if (song.gp[GP_ENGINE] == ENG_WIND) {
+        /* a tongued note: a push of breath that falls back, with a chiff */
+        s->tg = amp;
+        s->chiff = amp;
+        s->chiff_n = (int)(CHIFF_MS * sr);
+        return;
+    }
     int len = s->D_cur > 8.f ? (int)s->D_cur : (int)(0.004f * sr);
     if (len > (int)(0.006f * sr))
         len = (int)(0.006f * sr);
@@ -446,6 +508,12 @@ void engine_bow(int s, int on)
 {
     if (s >= 0 && s < NS)
         str[s].hand = on;
+}
+
+void engine_overblow(int s, int on)
+{
+    if (s >= 0 && s < NS)
+        str[s].over = on;
 }
 
 void engine_set_playing(int on) { live.playing = on; }
@@ -1078,6 +1146,292 @@ static float lfo_value(int l, double pos16)
     }
 }
 
+/* ------------------------------------------------------------------ wind
+ *
+ * A wind voice is a bore: one delay line closed by a loss filter (the open
+ * end and the walls), driven at the mouthpiece by an exciter, after the
+ * Cook / Smith waveguide instruments:
+ *   LIP       a lip resonator near the note, squared into a pressure valve;
+ *             the bore is two periods long, so the lips pick an upper mode
+ *   REED      a single reed: a pressure-controlled valve on a cylindrical
+ *             bore half a period long (odd harmonics, like a clarinet)
+ *   DOUBLE    a stiffer double reed on a full-length bore (all harmonics)
+ *   FLUTE     an air jet: breath through a jet delay into a cubic edge
+ *   FREE      a free reed sounding at its own pitch into a short pipe
+ *   RECORDER  a duct-guided jet: steady, sweet, a chiff on each attack
+ *   BANSURI   a transverse bamboo flute: a longer, breathier jet
+ * The material sets the losses, a little wall dispersion, and the body. */
+/* found by sweeping each against pitch and stability (jd_test checks them):
+ * the jets' share of the loss filter's delay, the lips' opening gain and
+ * rest, the flute and bansuri jet lengths, the jets' peak breath and noise */
+static const float jet_lpfac = 0.4f, lip_gain = 10.f, lip_rest = 0.3f, jet_ratio_f = 0.30f, jet_ratio_b = 0.34f,
+                   jet_loop = 1.f, jet_pmax = 0.85f, jet_air = 0.5f;
+typedef struct {
+    float lp_scale, rho, disp;
+    float f[NMODE], q[NMODE];
+    int root_rel; /* body modes as ratios of the root */
+} Material;
+static const Material materials[NMATERIAL] = {
+    {0.75f, 0.990f, 0.00f, {420, 900, 1800, 3200, 5200}, {6, 7, 8, 8, 6}, 0},          /* wood: warm, soft walls */
+    {1.00f, 0.997f, 0.12f, {2.0f, 5.40f, 8.93f, 13.3f, 18.6f}, {40, 40, 50, 50, 60}, 1}, /* metal: bright, ringing */
+    {0.90f, 0.994f, 0.05f, {330, 760, 1350, 2400, 3900}, {14, 12, 10, 9, 8}, 0},       /* ceramic: an earthen hollow */
+    {1.10f, 0.998f, 0.28f, {1900, 3300, 5100, 7400, 9800}, {70, 70, 80, 80, 90}, 0},   /* glass: pure, sparkling */
+};
+
+typedef struct {
+    int ex, reg;
+    float target_period, tr_k; /* the ear: the period wanted, its lowpass */
+    float base, air, lpk, rho, disp, emb, vib, growl;
+    float pmax, att_k, tg_dec, bow_k, hand_k, out_g;
+    float roff, rslope;                  /* reeds */
+    float lb0, la1, la2, lgain;          /* lips */
+    float jetD, jet_refl, end_refl;      /* jets */
+    float fr_inc, fr_k, fr_th;           /* free reed */
+    float vib_inc;
+} WindVoice;
+
+static float rd_hermite(const float *buf, int w, float D)
+{
+    float rp = w - D;
+    if (rp < 0.f)
+        rp += DL_MAX;
+    int ri = (int)rp;
+    float fr = rp - ri;
+    int r0 = ri ? ri - 1 : DL_MAX - 1, r2 = ri + 1 < DL_MAX ? ri + 1 : 0, r3 = r2 + 1 < DL_MAX ? r2 + 1 : 0;
+    float y0 = buf[r0], y1 = buf[ri], y2 = buf[r2], y3 = buf[r3];
+    float c1 = 0.5f * (y2 - y0), c2 = y0 - 2.5f * y1 + 2.f * y2 - 0.5f * y3, c3 = 0.5f * (y3 - y0) + 1.5f * (y1 - y2);
+    return ((c3 * fr + c2) * fr + c1) * fr + y1;
+}
+
+/* one sample of a wind voice: y is the bore (for meters and the bridge),
+ * o the sound */
+static void wind_tick(String *st, const WindVoice *v, float inj, float *py, float *po)
+{
+    /* breath: steady blowing (BREATH, opened by the breath ring or the
+     * hand), plus tongued notes that push and fall back */
+    st->bow_env += ((float)(st->bow_open | st->hand) - st->bow_env) * (st->hand ? v->hand_k : v->bow_k);
+    float target = (st->hand ? fmaxf(v->base, 0.8f) : v->base) * st->bow_env + st->tg;
+    st->tg *= v->tg_dec;
+    st->pr += (target - st->pr) * v->att_k;
+    st->vph += v->vib_inc;
+    if (st->vph > 6.2831853f)
+        st->vph -= 6.2831853f;
+    float p = st->pr * (1.f + v->vib * 0.07f * sinf(st->vph));
+    st->gr_lp += (fnoise() - st->gr_lp) * 0.004f; /* growl: a slow rasp */
+    p *= 1.f + v->growl * 4.f * st->gr_lp;
+    float bp = v->pmax * (1.f - expf(-2.5f * fmaxf(p, 0.f)));
+    st->nlp += (fnoise() - st->nlp) * 0.55f;
+    bp *= 1.f + st->nlp * v->air;
+    float ch = 0.f;
+    if (st->chiff_n > 0) {
+        ch = fnoise() * st->chiff * st->chiff_n / (CHIFF_MS * sr);
+        st->chiff_n--;
+    }
+
+    float y = rd_hermite(st->buf, st->w, st->D_cur), x = y;
+    if (v->disp > 0.f)
+        for (int k = 0; k < 2; k++) {
+            float *a = st->ap[k];
+            float yk = v->disp * x + a[0] - v->disp * a[1];
+            a[0] = x;
+            a[1] = yk;
+            x = yk;
+        }
+    st->lp += (x - st->lp) * v->lpk;
+    float b = st->lp * v->rho, out, o;
+    switch (v->ex) {
+    case EX_REED:
+    case EX_DOUBLE: {
+        /* the reed opens and closes with the pressure across it */
+        float pd = (v->ex == EX_REED ? -0.95f : 0.95f) * b - bp;
+        float t = v->roff + v->rslope * pd;
+        t = t > 1.f ? 1.f : t < -1.f ? -1.f : t;
+        out = bp + pd * t + ch * 0.15f;
+        o = y * v->out_g;
+        break;
+    }
+    case EX_LIP: {
+        /* the lips ring near the note; their opening lets breath through */
+        /* the lips: a resonance near the note driven by the pressure across
+         * them (no response to steady pressure), resting slightly open */
+        float mp = bp, refl = 0.85f * b, dp = mp - refl;
+        float l = v->lb0 * (dp - st->lx2) + v->la1 * st->lz1 - v->la2 * st->lz2;
+        st->lx2 = st->lx1;
+        st->lx1 = dp;
+        st->lz2 = st->lz1;
+        st->lz1 = l;
+        float area = lip_rest + v->lgain * l;
+        area = area < 0.f ? 0.f : area > 1.f ? 1.f : area;
+        area *= area;
+        out = area * mp + (1.f - area) * refl + ch * 0.05f;
+        o = y * v->out_g;
+        break;
+    }
+    case EX_FREE: {
+        /* the reed swings at its own pitch; puffs of air sound the pipe */
+        st->fr_amp += (bp - st->fr_amp) * v->fr_k;
+        st->frph += v->fr_inc;
+        if (st->frph >= 1.f)
+            st->frph -= 1.f;
+        float r = sinf(6.2831853f * st->frph) + v->fr_th;
+        float flow = st->fr_amp * (r > 0.f ? r * r : 0.f) - st->fr_amp * 0.4f;
+        out = flow * 0.3f + b * 0.6f;
+        o = (y + flow * 0.6f) * v->out_g;
+        break;
+    }
+    default: {
+        /* the jet: breath crosses a gap and splits on the edge */
+        float breath = bp + ch;
+        float pd = breath - v->jet_refl * b;
+        st->jet[st->jw] = pd;
+        float rp = st->jw - v->jetD;
+        if (rp < 0.f)
+            rp += 2048.f;
+        int ri = (int)rp, rj = (ri + 1) & 2047;
+        pd = st->jet[ri] + (st->jet[rj] - st->jet[ri]) * (rp - ri);
+        st->jw = (st->jw + 1) & 2047;
+        pd = pd * (pd * pd - 1.f);
+        pd = pd > 1.f ? 1.f : pd < -1.f ? -1.f : pd;
+        out = pd + v->end_refl * b;
+        o = out * v->out_g;
+        break;
+    }
+    }
+    if (v->ex != EX_REED && v->ex != EX_DOUBLE) { /* keep the loop free of DC */
+        float d = out - st->dcx + 0.995f * st->dcy;
+        st->dcx = out;
+        st->dcy = d;
+        out = d;
+    }
+    st->buf[st->w] = softclip(out + inj);
+    st->w = st->w + 1 < DL_MAX ? st->w + 1 : 0;
+    st->env = fmaxf(fabsf(y), st->env * 0.9997f);
+    /* the ear: when the voice is sounding, compare its period with the
+     * note's and nudge the bore (slowly, within 20%) */
+    if (v->target_period > 0.f) {
+        st->tr_a += (y - st->tr_a) * v->tr_k;
+        st->tr_b += (st->tr_a - st->tr_b) * v->tr_k;
+        float z = st->tr_b;
+        st->tr_count += 1.f;
+        if (st->tr_prev < 0.f && z >= 0.f) {
+            float frac = st->tr_prev / (st->tr_prev - z), per = st->tr_count - 1.f + frac;
+            st->tr_count = 1.f - frac;
+            if (st->env > 0.02f && per > 0.6f * v->target_period && per < 1.6f * v->target_period) {
+                st->tr_period = st->tr_period > 0.f ? st->tr_period + (per - st->tr_period) * 0.2f : per;
+                st->corr *= 1.f - 0.02f * (st->tr_period / v->target_period - 1.f);
+                st->corr = st->corr < 0.8f ? 0.8f : st->corr > 1.25f ? 1.25f : st->corr;
+            }
+        }
+        st->tr_prev = z;
+    }
+    *py = y;
+    *po = o;
+}
+
+/* the wind voice's settings for this sub-block (pitch dependent) and its
+ * bore length */
+static void wind_setup(WindVoice *v, String *st, const int *P, float hz, float sps16, float hand_k)
+{
+    const Material *m = &materials[song.gp[GP_MATERIAL]];
+    int ex = song.gp[GP_EXCITE];
+    v->ex = ex;
+    v->reg = P[SP_HARM] + 1;
+    if (st->over) /* overblown by hand: a reed like a clarinet's jumps a twelfth, the rest an octave */
+        v->reg *= ex == EX_REED ? 3 : 2;
+    v->base = P[SP_BOW] / 100.f;
+    float d = P[SP_DECAY] / 100.f;
+    v->air = 0.015f + 0.2f * d * d * d * d; /* breath is never perfectly still */
+    float br = P[SP_BRIGHT] / 100.f;
+    v->lpk = fminf(0.95f, (0.25f + 0.7f * powf(br, 1.2f)) * m->lp_scale);
+    v->rho = m->rho;
+    v->disp = m->disp;
+    v->emb = P[SP_STIFF] / 100.f;
+    v->vib = P[SP_POS] / 100.f;
+    v->growl = P[SP_BUZZ] / 100.f;
+    v->bow_k = 1.f - expf(-1.f / (0.5f * sps16 * rate_div16[P[SP_RATE]]));
+    v->hand_k = hand_k;
+    v->tg_dec = expf(-1.f / (0.3f * sr));
+    v->vib_inc = 6.2831853f * (4.6f + 0.3f * (float)(st - str)) / sr;
+    static const float pmax[NEXCITE] = {1.0f, 0.95f, 0.8f, 1.25f, 1.0f, 1.1f, 1.2f};
+    static const float att[NEXCITE] = {0.015f, 0.02f, 0.02f, 0.012f, 0.04f, 0.01f, 0.015f};
+    static const float outg[NEXCITE] = {1.0f, 1.0f, 1.0f, 0.3f, 0.8f, 0.3f, 0.3f};
+    v->pmax = pmax[ex];
+    if (ex == EX_FLUTE || ex == EX_RECORDER || ex == EX_BANSURI) {
+        /* a gentle jet locks to the fundamental; some turbulence is always
+         * there to start it */
+        v->pmax = jet_pmax;
+        v->air = 0.01f + v->air * jet_air;
+    }
+    v->att_k = 1.f - expf(-1.f / (att[ex] * sr));
+    v->out_g = outg[ex];
+    if (ex == EX_BANSURI)
+        v->air += 0.06f; /* bamboo breathes */
+    if (ex == EX_RECORDER)
+        v->air *= 0.4f;
+
+    float f = hz, loop;
+    switch (ex) {
+    case EX_LIP:
+        loop = (0.6f + 2.2f / f) * sr / f; /* the lips pull the pitch down: a shorter bore */
+        {
+            float lf = f * v->reg * (1.f + 0.05f * v->emb), r = 0.997f, w = 6.2831853f * lf / sr;
+            v->lb0 = 0.5f - 0.5f * r * r;
+            v->la1 = 2.f * r * cosf(w);
+            v->la2 = r * r;
+            v->lgain = lip_gain * (0.7f + 0.6f * v->emb);
+        }
+        break;
+    case EX_REED:
+        loop = 0.5f * sr / (f * v->reg); /* half a period: odd harmonics */
+        v->roff = 0.7f;
+        v->rslope = -0.3f + 0.2f * v->emb;
+        break;
+    case EX_DOUBLE:
+        loop = sr / (f * v->reg);
+        v->roff = 0.6f;
+        v->rslope = -0.6f + 0.35f * v->emb;
+        break;
+    case EX_FREE:
+        loop = sr / (f * v->reg);
+        v->fr_inc = f * v->reg / sr;
+        v->fr_k = 1.f - expf(-1.f / (0.04f * sr));
+        v->fr_th = -0.2f + 0.6f * v->emb;
+        break;
+    default: { /* FLUTE, RECORDER, BANSURI: an octave up (flutes are high), on a
+                * bore two periods long whose second mode the jet locks to */
+        f *= 2.f;
+        loop = jet_loop * sr / (f * v->reg); /* REGISTER: a shorter bore, as by cross-fingering */
+        float ratio = ex == EX_RECORDER ? 0.26f : ex == EX_BANSURI ? jet_ratio_b : jet_ratio_f;
+        ratio *= 1.f - 0.35f * v->emb;
+        v->jetD = fminf(fmaxf(loop * ratio, 2.f), 2040.f);
+        v->jet_refl = ex == EX_BANSURI ? 0.55f : ex == EX_RECORDER ? 0.45f : 0.5f;
+        v->end_refl = ex == EX_BANSURI ? 0.45f : 0.5f;
+        break;
+    }
+    }
+    /* the note that should sound, for the ear (the free reed keeps its own) */
+    float sound = ex == EX_LIP ? f * v->reg : 0.f; /* only the lips need lipping into tune */
+    if (ex == EX_LIP)
+        loop /= v->reg;
+    v->target_period = sound > 0.f ? sr / sound : 0.f;
+    st->f_sound = (ex >= EX_FLUTE && ex != EX_FREE ? f : f) * v->reg;
+    /* the loss filter's and the wall allpasses' delay at the note itself,
+     * so high notes stay in tune */
+    float fs = ex >= EX_FLUTE && ex != EX_FREE ? f * v->reg : ex == EX_LIP ? f * v->reg : f * v->reg;
+    float w = 6.2831853f * fminf(fs, 0.45f * sr) / sr, c1 = 1.f - v->lpk;
+    float lp_delay = atan2f(c1 * sinf(w), 1.f - c1 * cosf(w)) / w, ap_delay = 0.f;
+    if (ex >= EX_FLUTE && ex != EX_FREE)
+        lp_delay *= jet_lpfac;
+    if (v->disp > 0.f) {
+        float a = v->disp, ph = atan2f(-sinf(w), a + cosf(w)) - atan2f(-a * sinf(w), 1.f + a * cosf(w));
+        ap_delay = -2.f * ph / w;
+    }
+    v->tr_k = 1.f - expf(-6.2831853f * 1.4f * fmaxf(sound, 20.f) / sr);
+    if (st->corr <= 0.f)
+        st->corr = 1.f;
+    st->D = fmaxf(3.f, fminf(loop * st->corr - lp_delay - ap_delay, DL_MAX - 4.f));
+}
+
 #define SUB 64
 
 /* tiny numbers in decaying tails are flushed to zero: on ARM VFP and x86
@@ -1136,8 +1490,15 @@ void engine_render(int16_t *out, int frames)
         float root_hz = midi_hz((float)song.gp[GP_ROOT]);
         while (root_hz < 90.f)
             root_hz *= 2.f;
+        int windb = song.gp[GP_ENGINE] == ENG_WIND;
+        const Material *mt = &materials[song.gp[GP_MATERIAL]];
         for (int i = 0; i < NMODE; i++) {
             float f, q;
+            if (windb) { /* in WIND the body is the instrument's material */
+                f = mt->root_rel ? root_hz * mt->f[i] : mt->f[i];
+                q = mt->q[i];
+            }
+            else
             switch (song.fx[FX_BTYPE]) {
             case BODY_WOOD: f = wood_f[i], q = wood_q[i]; break;
             case BODY_GOURD: f = gourd_f[i], q = gourd_q[i]; break;
@@ -1158,6 +1519,16 @@ void engine_render(int16_t *out, int frames)
     float buzz_th[NS], buzz_k[NS], bow_k[NS], pk_col[NS], pk_gain[NS];
     const Scale *sc = cur_scale();
     float hand_k = 1.f - expf(-1.f / (0.15f * sr));
+    int wind = song.gp[GP_ENGINE] == ENG_WIND;
+    /* undertones: which divisions, how long they ring, how loud */
+    static const int sub_divs[NSUBDIV][2] = {{2, 0}, {3, 0}, {4, 0}, {2, 3}};
+    const int *sdiv = sub_divs[song.gp[GP_SUBDIV]];
+    float sub_g = song.gp[GP_SUB] / 100.f * 1.4f;
+    float sub_r = expf(-1.f / ((0.06f + 1.5f * song.gp[GP_SUBRES] / 100.f) * sr));
+    float sb_a1[NS][2], sb_a2 = sub_r * sub_r, sb_amp[NS][2], sb_k[NS];
+    WindVoice wv[NS];
+    if (wind)
+        couple *= 0.3f; /* air couples more gently than a bridge */
     /* binaural: the beat in hertz; LOCK puts it on the nearest power-of-two
      * multiple of the beat rate, so it pulses with the rhythm */
     float bin_hz = song.fx[FX_BINBEAT] * 0.5f, bin_mix = song.fx[FX_BINDEPTH] / 100.f;
@@ -1180,6 +1551,8 @@ void engine_render(int16_t *out, int frames)
     float harm_n[NS], gate_d[NS];
     for (int s = 0; s < NS; s++) {
         harm_n[s] = song.sp[s][SP_HARM] ? (float)(song.sp[s][SP_HARM] + 1) : 0.f;
+        if (str[s].over) /* touched by hand: the next harmonic up */
+            harm_n[s] = harm_n[s] > 0.f ? fminf(harm_n[s] + 1.f, 6.f) : 2.f;
         gate_d[s] = song.sp[s][SP_GATE] / 100.f;
     }
     /* sympathetic strings: tune them, and set their loop */
@@ -1259,6 +1632,16 @@ void engine_render(int16_t *out, int frames)
                 st->midi_cur += (base_midi[s] - st->midi_cur) * (1.f - expf(-4.f * nn / glide_samps));
             float hz = midi_hz(st->midi_cur + m_pitch);
             hz = fmaxf(20.f, fminf(hz, sr / 8.f));
+            if (wind) {
+                wind_setup(&wv[s], st, song.sp[s], hz, sps16, hand_k);
+                wv[s].base *= m_bow;
+                if (st->D_cur <= 0.f)
+                    st->D_cur = st->D;
+                float l = song.sp[s][SP_LEVEL] / 100.f;
+                st->lvl = l * l * m_lvl;
+                continue;
+            }
+            st->f_sound = hz;
             float lp_delay = (1.f - lp_k[s]) / lp_k[s];
             if (lp_delay > 6.f)
                 lp_delay = 6.f;
@@ -1269,6 +1652,21 @@ void engine_render(int16_t *out, int frames)
             float l = song.sp[s][SP_LEVEL] / 100.f;
             st->lvl = l * l * m_lvl;
         }
+        if (sub_g > 0.f)
+            for (int s = 0; s < NS; s++) {
+                float fv = fmaxf(str[s].f_sound, 20.f);
+                sb_k[s] = 1.f - expf(-6.2831853f * 1.3f * fv / sr);
+                for (int j = 0; j < 2; j++) {
+                    if (!sdiv[j]) {
+                        sb_a1[s][j] = sb_amp[s][j] = 0.f;
+                        continue;
+                    }
+                    float w = 6.2831853f * fv / sdiv[j] / sr;
+                    sb_a1[s][j] = 2.f * sub_r * cosf(w);
+                    /* a pulse per sub period keeps the ring at the voice's level */
+                    sb_amp[s][j] = sinf(w) * (1.f - powf(sub_r, sr * sdiv[j] / fv));
+                }
+            }
         float sy_dD[NSYMP];
         for (int k = 0; k < nsy; k++) {
             Symp *q = &sy[k];
@@ -1317,6 +1715,19 @@ void engine_render(int16_t *out, int frames)
                 if (st->gain < 1e-4f && !song.on[s])
                     continue;
 
+                float y, o;
+                if (wind) {
+                    wind_tick(st, &wv[s], couple * (bridge - st->last_y), &y, &o);
+                    if (fold_g[s] > 0.f) {
+                        float g = 1.f + fold_g[s] * 5.f, xf = o * g, dx = xf - st->fold_x1, f;
+                        f = fabsf(dx) > 1e-4f ? (fold_F(xf) - fold_F(st->fold_x1)) / dx : fold_f(0.5f * (xf + st->fold_x1));
+                        st->fold_x1 = xf;
+                        o = f * (0.8f / sqrtf(g));
+                    }
+                    st->last_y = y * st->gain;
+                    br += st->last_y;
+                    goto voice_out;
+                }
                 /* fractional read D samples back: four-point Hermite, which
                  * keeps the highs that linear interpolation would dull on
                  * every pass, and still glides under pitch modulation */
@@ -1329,7 +1740,7 @@ void engine_render(int16_t *out, int frames)
                 float y0 = st->buf[r0], y1 = st->buf[ri], y2 = st->buf[r2], y3 = st->buf[r3];
                 float c1 = 0.5f * (y2 - y0), c2 = y0 - 2.5f * y1 + 2.f * y2 - 0.5f * y3;
                 float c3 = 0.5f * (y3 - y0) + 1.5f * (y1 - y2);
-                float y = ((c3 * fr + c2) * fr + c1) * fr + y1;
+                y = ((c3 * fr + c2) * fr + c1) * fr + y1;
                 if (harm_n[s] > 0.f) {
                     /* HARM: a light touch at 1/n of the string. Taps spaced
                      * D/n apart agree only on multiples of the n-th harmonic,
@@ -1345,7 +1756,7 @@ void engine_render(int16_t *out, int frames)
                     }
                     y = 0.6f * y + 0.4f * acc / harm_n[s];
                 }
-                float o = y;
+                o = y;
                 if (pos_f[s] > 0.f) {
                     /* comb with a tap further back: the pick-position filter */
                     float rq = rp - st->D_cur * pos_f[s];
@@ -1408,7 +1819,30 @@ void engine_render(int16_t *out, int frames)
                 st->buf[st->w] = softclip(fbk + ex);
                 st->w = st->w + 1 < DL_MAX ? st->w + 1 : 0;
 
-                /* GATE: the string's sound follows its bow ring */
+            voice_out:
+                if (sub_g > 0.f) {
+                    /* undertones: every n-th upward crossing of the voice (lowpassed
+                     * to its fundamental) strikes a resonance n times lower */
+                    st->sb_a += (y - st->sb_a) * sb_k[s];
+                    st->sb_b += (st->sb_a - st->sb_b) * sb_k[s];
+                    int cross = st->sb_prev < 0.f && st->sb_b >= 0.f;
+                    st->sb_prev = st->sb_b;
+                    if (cross)
+                        st->sb_n = (st->sb_n + 1) % 12;
+                    float sub = 0.f;
+                    for (int j = 0; j < 2; j++) {
+                        if (!sdiv[j])
+                            continue;
+                        float *r = st->sb_r[j];
+                        float in = cross && st->sb_n % sdiv[j] == 0 ? sb_amp[s][j] * fminf(st->env, 0.6f) * 1.6f : 0.f;
+                        float z = in + sb_a1[s][j] * r[0] - sb_a2 * r[1];
+                        r[1] = r[0];
+                        r[0] = z;
+                        sub += z;
+                    }
+                    o += sub * sub_g;
+                }
+                /* GATE: the voice's sound follows its bow (breath) ring */
                 o *= st->lvl_cur * st->gain * play_g * (1.f - gate_d[s] + gate_d[s] * st->bow_env);
                 float pan = song.sp[s][SP_PAN] / 50.f;
                 L += o * (1.f - pan);
@@ -1667,6 +2101,16 @@ static void from_v7(Song *s, const SongV7 *o)
     neutral_v03(s);
 }
 
+static void from_v8(Song *s, const SongV8 *o)
+{
+    fill_default(s); /* ENGINE: STRINGS */
+    memcpy(s->on, o->on, sizeof s->on);
+    memcpy(s->sp, o->sp, sizeof s->sp);
+    memcpy(s->gp, o->gp, sizeof o->gp);
+    memcpy(s->lfo, o->lfo, sizeof s->lfo);
+    memcpy(s->fx, o->fx, sizeof s->fx);
+}
+
 static void legacy_quiet(Song *s)
 {
     neutral_v03(s);
@@ -1768,6 +2212,7 @@ int song_load(const char *path)
     SongV5 o;
     SongV6 o6;
     SongV7 o7;
+    SongV8 o8;
     unsigned char buf[sizeof s + 1];
     size_t got = fread(buf, 1, sizeof buf, f);
     fclose(f);
@@ -1776,6 +2221,10 @@ int song_load(const char *path)
         memcpy(&magic, buf, sizeof magic);
     if (magic == SONG_MAGIC && got == sizeof s)
         memcpy(&s, buf, sizeof s);
+    else if (magic == SONG_MAGIC_V8 && got == sizeof o8) {
+        memcpy(&o8, buf, sizeof o8);
+        from_v8(&s, &o8);
+    }
     else if (magic == SONG_MAGIC_V7 && got == sizeof o7) {
         memcpy(&o7, buf, sizeof o7);
         from_v7(&s, &o7);

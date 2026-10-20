@@ -99,8 +99,9 @@ static void cell(int x, int y, int w, int h, int kind, int a, int b)
 
 /* SOUND: per-string tone above, the shared resonance below */
 static const int sound_rows[9] = {SP_NOTE, SP_HARM, SP_BOW, SP_DECAY, SP_BRIGHT, SP_FOLD, SP_STIFF, SP_POS, SP_BUZZ};
-#define SOUND_Y 106
-#define SOUND_RH 30
+#define SOUND_Y 118
+#define SOUND_RH 29
+#define ENGINE_Y 84
 #define BAND_Y (SOUND_Y + 9 * SOUND_RH + 4)
 /* COMPOSE: the progression on the left, its controls on the right */
 static const int comp_a[7] = {GP_SCALE, GP_ROOT, GP_MODE, GP_CHANGES, GP_CHANCE, GP_GLIDE, GP_BPM};
@@ -118,10 +119,13 @@ static void layout(int pg)
     const int cw = SCREEN_W / NS;
     switch (pg) {
     case PAGE_SOUND:
+        cell(3, ENGINE_Y, 207, 30, CK_G, 0, GP_ENGINE);
+        cell(216, ENGINE_Y, 207, 30, CK_G, 0, GP_EXCITE);
+        cell(429, ENGINE_Y, 208, 30, CK_G, 0, GP_MATERIAL);
         for (int r = 0; r < 9; r++)
             for (int s = 0; s < NS; s++)
                 cell(s * cw + 3, SOUND_Y + r * SOUND_RH, cw - 6, SOUND_RH - 3, CK_S, s, sound_rows[r]);
-        cell(3, BAND_Y, 154, 32, CK_F, 0, FX_SYMP);
+        cell(3, BAND_Y, 154, 32, CK_F, 0, FX_SYMP); /* (in WIND the body is the material's) */
         cell(163, BAND_Y, 154, 32, CK_F, 0, FX_BODY);
         cell(323, BAND_Y, 154, 32, CK_F, 0, FX_BTYPE);
         cell(483, BAND_Y, 154, 32, CK_G, 0, GP_CUTOFF);
@@ -143,8 +147,11 @@ static void layout(int pg)
             cell(s * cw + 3, BODY_Y + 76, cw - 6, 31, CK_S, s, SP_PAN);
             cell(s * cw + 3, BODY_Y + 110, cw - 6, 31, CK_S, s, SP_GATE);
         }
-        cell(3, BODY_Y + 146, 314, 31, CK_G, 0, GP_MASTER);
-        cell(323, BODY_Y + 146, 314, 31, CK_F, 0, FX_SLEVEL);
+        cell(3, BODY_Y + 146, cw - 6, 31, CK_G, 0, GP_MASTER);
+        cell(cw + 3, BODY_Y + 146, cw - 6, 31, CK_F, 0, FX_SLEVEL);
+        cell(2 * cw + 3, BODY_Y + 146, cw - 6, 31, CK_G, 0, GP_SUB);
+        cell(3 * cw + 3, BODY_Y + 146, cw - 6, 31, CK_G, 0, GP_SUBDIV);
+        cell(4 * cw + 3, BODY_Y + 146, cw - 6, 31, CK_G, 0, GP_SUBRES);
         for (int c = 0; c < 3; c++)
             for (int p = 0; p < 3; p++)
                 cell(c * 213 + 4, MIX_FXC_Y + p * 42, 205, 38, CK_F, 0, c * 3 + p);
@@ -211,6 +218,8 @@ static void adjust(int dir, int repeats)
         engine_set_bpm((float)nv);
     if (c->kind == CK_G && c->b == GP_SYNC)
         engine_set_rate(1.0);
+    if (c->kind == CK_G && c->b == GP_ENGINE)
+        say("%s", nv == ENG_WIND ? "WIND: BORES, BREATH AND TONGUE" : "STRINGS: BOW AND PLUCK");
     if (c->kind == CK_G && c->b == GP_MODE)
         say("%s", nv == MODE_MONO ? "MONO: ALL STRINGS FOLLOW STRING 1" : "CHORD: EACH STRING ITS OWN NOTE");
 }
@@ -330,11 +339,17 @@ static void action(int b, int repeats)
             start_used |= held[BTN_START];
             page = wrap(page + (b == BTN_R1 ? 1 : -1), PAGE_COUNT);
         }
-        else if (b == BTN_L1)
-            engine_pluck(cur_s);
+        else if (b == BTN_L1) {
+            if (bowing >= 0) /* already bowing: L1 overblows / touches a harmonic */
+                engine_overblow(bowing, 1);
+            else
+                engine_pluck(cur_s);
+        }
         else {
             bowing = cur_s;
             engine_bow(cur_s, 1);
+            /* R1 added while L1 is held: overblow (wind) or a harmonic (strings) */
+            engine_overblow(cur_s, held[BTN_L1]);
         }
         return;
     case BTN_START: return; /* acts on release, unless used for a page change */
@@ -404,6 +419,11 @@ void ui_button(int b, int down)
         return;
     }
     if (b == BTN_L1 && page == PAGE_PLAY && !held[BTN_START]) {
+        if (!down && bowing >= 0) { /* letting go of L1: back to the plain bow */
+            ui_lock();
+            engine_overblow(bowing, 0);
+            ui_unlock();
+        }
         if (!down)
             l1_up_ms = now_ms;
         else if (now_ms - l1_up_ms < REPEAT_GAP_MS)
@@ -433,6 +453,7 @@ void ui_tick(int ms)
     if (bow_release_ms > 0 && (bow_release_ms -= ms) <= 0 && bowing >= 0 && !held[BTN_R1]) {
         ui_lock();
         engine_bow(bowing, 0);
+        engine_overblow(bowing, 0);
         ui_unlock();
         bowing = -1;
     }
@@ -544,6 +565,17 @@ static void draw_string_big(int x0, int x1, int y, float amp, float ph, uint32_t
         }
         py = yy;
     }
+    if (song.gp[GP_ENGINE] == ENG_WIND) {
+        /* a bore: two walls, closed at the mouthpiece, open at the bell */
+        int hw = (int)(9 * big) + 4;
+        uint32_t wc = on ? gfx_mix(C_BG, col, 0.55f) : C_OFF;
+        gfx_fill(x0, y - hw, w, 2, wc);
+        gfx_fill(x0, y + hw, w, 2, wc);
+        gfx_fill(x0 - 3, y - hw, 3, 2 * hw + 2, on ? col : C_OFF);
+        gfx_tri(x1, y - hw, x1 + 6, y - hw - 5, x1, y - hw + 2, wc);
+        gfx_tri(x1, y + hw + 2, x1 + 6, y + hw + 7, x1, y + hw, wc);
+        return;
+    }
     /* end posts */
     gfx_fill(x0 - 2, y - 7, 3, 15, on ? col : C_OFF);
     gfx_fill(x1, y - 7, 3, 15, on ? col : C_OFF);
@@ -600,6 +632,13 @@ static void draw_footer(void)
         "D-PAD:MOVE Y:- X:+ A:MUTE B:PLUCK L1/R1:PAGE SEL:CHORD",
     };
     const char *h = hints[page];
+    if (page != PAGE_PLAY && song.gp[GP_ENGINE] == ENG_WIND)
+        h = page == PAGE_COMPOSE ? "D-PAD:MOVE Y:- X:+ B:TONGUE L1/R1:PAGE SEL:NEXT CHORD"
+                                 : "D-PAD:MOVE Y:- X:+ A:MUTE B:TONGUE L1/R1:PAGE SEL:CHORD";
+    if (page == PAGE_PLAY && song.gp[GP_ENGINE] == ENG_WIND)
+        h = "A:ON/OFF B:FEWER X:ROT Y:NEW L1:TONGUE R1:BLOW L1+R1:OVERBLOW";
+    else if (page == PAGE_PLAY)
+        h = "A:ON/OFF B:FEWER X:ROT Y:NEW L1:PLUCK R1:BOW L1+R1:HARMONIC";
     if (page == PAGE_PLAY && held[BTN_L2])
         h = "L2+ ^v:STEPS <>:RATE X:MORE PULSES Y:ROTATE BACK A:MUTE";
     else if (page == PAGE_PLAY && held[BTN_R2])
@@ -631,6 +670,10 @@ static uint32_t cell_col(const Cell *c)
         return C_SEA;
     if (c->kind == CK_F && c->b >= FX_SYMP)
         return C_SAND;
+    if (c->kind == CK_G && (c->b == GP_ENGINE || c->b == GP_EXCITE || c->b == GP_MATERIAL))
+        return C_SAND;
+    if (c->kind == CK_G && c->b >= GP_SUB)
+        return C_CEDAR + 0x303030;
     if (page == PAGE_COMPOSE && c->kind == CK_G && c->b >= GP_MOTION)
         return C_SEA;
     if (page == PAGE_MIX && c->kind == CK_F && c->b < FX_SYMP)
@@ -653,7 +696,15 @@ static void draw_cells(void)
             on = 0;
         if (c->kind == CK_S && c->b == SP_NOTE && song.gp[GP_MODE] == MODE_MONO && c->a > 0)
             on = 0;
-        param_row(c->x, c->y, c->w, c->h, i == sel_cell[page], on, d->name, val, t, d->min < 0, cell_col(c));
+        int wind = song.gp[GP_ENGINE] == ENG_WIND;
+        if (c->kind == CK_G && (c->b == GP_EXCITE || c->b == GP_MATERIAL) && !wind)
+            on = 0;
+        if (c->kind == CK_F && c->b == FX_BTYPE && wind)
+            on = 0;
+        if (c->kind == CK_G && (c->b == GP_SUBDIV || c->b == GP_SUBRES) && !song.gp[GP_SUB])
+            on = 0;
+        param_row(c->x, c->y, c->w, c->h, i == sel_cell[page], on, c->kind == CK_S ? sparam_name(c->b) : d->name, val, t,
+                  d->min < 0, cell_col(c));
     }
 }
 
@@ -665,20 +716,23 @@ static void string_heads(int y0, int h)
     for (int s = 0; s < NS; s++) {
         int x = s * cw + 3, w = cw - 6, on = song.on[s];
         uint32_t col = scol[s];
-        roof(x, y0, w, h, 5, s == cs ? gfx_mix(C_PANEL2, col, 0.14f) : C_PANEL);
+        roof(x, y0, w, h, 4, s == cs ? gfx_mix(C_PANEL2, col, 0.14f) : C_PANEL);
         char nm[24], dn[16];
         engine_degree_name(song.gp[GP_MODE] == MODE_MONO ? song.sp[0][SP_NOTE] : song.sp[s][SP_NOTE], dn, sizeof dn);
         snprintf(nm, sizeof nm, "%d %s", s + 1, dn);
         gfx_text(x + 8, y0 + 1, nm, on ? col : C_DIM, FONT_SMALL);
         if (!on)
             gfx_fill(x + w - 26, y0 + 12, 18, 4, C_RED);
-        draw_string_big(x + 12, x + w - 12, y0 + h - 9, on ? live.meter[s] : 0.f, live.phase[s], col, on, 0.6f);
+        if (h > 30)
+            draw_string_big(x + 12, x + w - 12, y0 + h - 9, on ? live.meter[s] : 0.f, live.phase[s], col, on, 0.6f);
+        else /* a short header: the string as a line that brightens as it sounds */
+            gfx_fill(x + 70, y0 + 11, w - 80, 2, on ? gfx_mix(C_PANEL2, col, 0.3f + fminf(0.7f, live.meter[s] * 4.f)) : C_OFF);
     }
 }
 
 static void draw_sound(void)
 {
-    string_heads(BODY_Y, SOUND_Y - BODY_Y - 3);
+    string_heads(BODY_Y, ENGINE_Y - BODY_Y - 3);
     /* the resonance band: one copper roofline over body and sympathetic strings */
     slant(0, BAND_Y - 2, SCREEN_W, BAND_Y - 4, 2, C_COPPER);
     draw_cells();
@@ -941,9 +995,12 @@ static void draw_play(void)
         if (!P[SP_BON] && on && P[SP_BOW] > 0)
             gfx_fill((int)(cx - r * 0.6f), (int)bcy - 1, (int)(r * 1.2f), 3, gfx_mix(C_BG, col, 0.5f));
         char lb[24];
-        snprintf(lb, sizeof lb, P[SP_PCHANCE] < 100 ? "PLUCK %d%%" : "PLUCK", P[SP_PCHANCE]);
+        int wnd = song.gp[GP_ENGINE] == ENG_WIND;
+        snprintf(lb, sizeof lb, P[SP_PCHANCE] < 100 ? (wnd ? "TONGUE %d%%" : "PLUCK %d%%") : (wnd ? "TONGUE" : "PLUCK"),
+                 P[SP_PCHANCE]);
         gfx_text((int)cx - gfx_text_w(lb, FONT_SMALL) / 2, (int)(pcy + r + 4), lb, sel && ring == 0 ? col : C_DIM, FONT_SMALL);
-        snprintf(lb, sizeof lb, P[SP_BCHANCE] < 100 ? "BOW %d%%" : "BOW", P[SP_BCHANCE]);
+        snprintf(lb, sizeof lb, P[SP_BCHANCE] < 100 ? (wnd ? "BREATH %d%%" : "BOW %d%%") : (wnd ? "BREATH" : "BOW"),
+                 P[SP_BCHANCE]);
         gfx_text((int)cx - gfx_text_w(lb, FONT_SMALL) / 2, (int)(bcy + r + 4), lb, sel && ring == 1 ? col : C_DIM, FONT_SMALL);
     }
 }

@@ -36,6 +36,57 @@ Shared by all five strings (SOUND page, bottom rows):
   BRONZE and HARMONIC follow the root note.
 - **TONE:** the master lowpass.
 
+## Wind
+
+ENGINE (top of the SOUND page) switches every voice from strings to **WIND**. Everything else stays: the
+five voices, their rings, the progressions, the sympathetic strings, the mix and the effects.
+
+A wind voice is a bore: a waveguide closed by a loss filter, driven at the mouthpiece by an **EXCITER**:
+
+| Exciter | Like | How it sounds |
+|---|---|---|
+| LIP | brass, conch, didgeridoo | the lips buzz near the note and let breath through as they open |
+| REED | clarinet | a single vibrating reed on a cylindrical bore: hollow, odd harmonics |
+| DOUBLE | oboe, shehnai, duduk | a stiffer double reed on a full bore: reedy, nasal, all harmonics |
+| FLUTE | concert flute | an air jet blown across an edge |
+| FREE | sheng, harmonium | a free reed sounding at its own pitch into a short pipe |
+| RECORDER | recorder | a duct-guided jet: steady and sweet, with a chiff on each attack |
+| BANSURI | Indian bamboo flute | a longer, breathier transverse jet |
+
+**MATERIAL** sets the walls' losses, a little wall dispersion and the body's resonances:
+
+- **WOOD:** warm and soft.
+- **METAL:** bright, with a ringing body tuned to the root.
+- **CERAMIC:** an earthen hollow, like an ocarina.
+- **GLASS:** pure and sparkling, with high, long resonances.
+
+In WIND the voice controls take their wind meanings:
+
+| Strings | Wind | |
+|---|---|---|
+| BOW | BREATH | steady blowing pressure (0 = only tongued notes and the hand) |
+| DECAY | AIR | breath noise |
+| STIFF | EMBOUCH | lip tension, reed opening or jet length: the edge of the tone |
+| POS | VIBRATO | breath vibrato, a little different on each voice |
+| BUZZ | GROWL | a rasp in the breath |
+| HARM | REG | the register: 1st to 5th |
+
+The pluck ring becomes **TONGUE**: each pulse is a tongued attack, a push of breath with a chiff. The bow ring
+becomes **BREATH**: it swells the blowing. Flutes, recorders and bansuris sound an octave higher than the
+strings, as flutes do. Each voice is checked by the test harness: every exciter in every material plays in
+tune within a few cents over three octaves. The lip voice listens to itself and lips its pitch onto the note,
+as a player does.
+
+## Undertones
+
+SUB (MIX page) gives every voice, in both engines, undertones that ring beneath it. Every n-th cycle of the
+voice strikes a resonance n times lower, so the undertone follows the voice's pitch and dynamics.
+
+- **SUB:** how loud.
+- **SUB DIV:** an octave below (OCT), a twelfth below (12TH), two octaves below (2 OCT), or the octave and the
+  twelfth together (OCT+12).
+- **SUB RES:** how long the undertones ring, from a short thump to a long resonant hum.
+
 ## Sympathetic strings
 
 Up to 12 extra strings that are never played. Like a sitar's taraf, they ring only when the main strings
@@ -123,14 +174,16 @@ The strings are not re-plucked on a change. They keep ringing and slide to the n
   corners, and the pulses are joined into an inner shape that lights on each pluck and fills as the bow swells.
   The band at the top shows the scale, the current chord and the bars until the next change.
 - **The quiet view** (tap L2 on PLAY): only the five strings and their rings, for meditation.
-- **SOUND:** tone and sound shaping. Each string's note, harmonic touch, bow, decay, brightness, fold,
+- **SOUND:** tone and sound shaping. The engine, exciter and material at the top, then each string's note,
+  harmonic touch, bow, decay, brightness, fold,
   stiffness, pick position and buzz, then coupling, body, tone and the sympathetic strings.
 - **COMPOSE:** the algorithmic side. On the left, the scale is drawn as a polygon, each degree at its true
   angle in the octave. The current chord is a shape inside it, the sympathetic strings are dots outside, and
   below are the chord, the chords before it and the bars until the next change. On the right: scale, root,
   voicing, changes, CHANCE, glide, tempo, MOTION, HOME, COLOR, EVOLVE, RELATE, drift, Wi-Fi sync and the
   two LFOs.
-- **MIX:** each string's level, pan and gate with a meter, master, the sympathetic strings' level, then delay,
+- **MIX:** each string's level, pan and gate with a meter, master, the sympathetic strings' level, the
+  undertones (SUB, SUB DIV, SUB RES), then delay,
   reverb and binaural.
 
 ## Binaural
@@ -171,8 +224,9 @@ on the shoulder buttons.
 | B | fewer pulses, wrapping back to all |
 | X | rotate the pattern |
 | Y | a new simple pattern |
-| L1 | pluck the selected string by hand |
-| R1 (hold) | bow the selected string by hand: it swells in and sings steadily for as long as R1 is held |
+| L1 | pluck the selected string by hand (WIND: tongue a note) |
+| R1 (hold) | bow the selected string by hand: it swells in and sings steadily for as long as R1 is held (WIND: blow) |
+| hold L1, then R1 | bow with a harmonic touch: the next harmonic up sings (WIND: overblow, an octave up, a twelfth for REED) |
 | L2 + up / down | more / fewer steps |
 | L2 + left / right | step length (right = faster) |
 | L2 + X | more pulses |
