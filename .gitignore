@@ -7,3 +7,4 @@ dist/Jaffedrone/log.txt
 dist/Jaffedrone/jaffedrone_log.txt*
 dist/Jaffedrone/jaffedrone.cfg
 dist/Jaffedrone/preset_*.jds
+__pycache__/
