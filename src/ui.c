@@ -49,6 +49,8 @@ static int pj_mode = PJ_SOFT;
 static void pj_set(int mode);
 static int l2_used, r2_used;
 static int bowing = -1; /* the string bowed by hand (R1 held) */
+static int latch_on(void) { return song.gp[GP_PLAYMODE] == PLAY_LATCH; }
+static void set_playmode(int latch);
 static int start_used;  /* START took part in a page change */
 /* some button drivers send a quick release and press while a button is
  * held: a bow survives a gap this short, and a pluck is not repeated */
@@ -316,7 +318,7 @@ static void layout(int pg)
         {
             static const int rows[3][3] = {{GP_PROG, GP_ATTACK, GP_RELEASE},
                                            {GP_KEYLOCK, GP_ROOT, GP_MODALITY},
-                                           {GP_SCALE, GP_CHANGES, GP_CHANCE}};
+                                           {GP_SCALE, GP_CHANGES, GP_PLAYMODE}};
             for (int r = 0; r < 3; r++)
                 for (int c = 0; c < 3; c++)
                     cell(3 + c * 213, SONGC_Y + r * 50, 207, 46, CK_G, 0, rows[r][c]);
@@ -326,7 +328,7 @@ static void layout(int pg)
         for (int s = 0; s < NS; s++) {
             cell(s * cw + 3, BODY_Y + 42, cw - 6, 31, CK_S, s, SP_LEVEL);
             cell(s * cw + 3, BODY_Y + 76, cw - 6, 31, CK_S, s, SP_PAN);
-            cell(s * cw + 3, BODY_Y + 110, cw - 6, 31, CK_S, s, SP_GATE);
+            cell(s * cw + 3, BODY_Y + 110, cw - 6, 31, CK_S, s, latch_on() ? SP_RELEASE : SP_GATE);
         }
         cell(3, BODY_Y + 146, cw - 6, 31, CK_G, 0, GP_MASTER);
         cell(cw + 3, BODY_Y + 146, cw - 6, 31, CK_F, 0, FX_SLEVEL);
@@ -425,6 +427,10 @@ static void adjust(int dir, int repeats)
         engine_set_bpm((float)nv);
     if (c->kind == CK_G && c->b == GP_SYNC)
         engine_set_rate(1.0);
+    if (c->kind == CK_G && c->b == GP_PLAYMODE) {
+        set_playmode(nv == PLAY_LATCH);
+        return;
+    }
     if (c->kind == CK_S && c->b == SP_VOICE)
         say("VOICE %d: %s", c->a + 1, nv ? "A WIND: BREATH AND TONGUE" : "A STRING: BOW AND PLUCK");
     if (c->kind == CK_G && c->b == GP_MODE)
@@ -510,6 +516,24 @@ static void play_action(int b)
      * A on/off, B fewer pulses (wrapping back to all), X rotate, Y a new
      * pattern; the d-pad picks the string and the ring */
     int *P = song.sp[cur_s];
+    if (latch_on()) /* LATCH: up / down the selected string's RELEASE, A lets every string go */
+        switch (b) {
+        case BTN_UP:
+        case BTN_DOWN: {
+            char rel[16];
+            P[SP_RELEASE] = clampi(P[SP_RELEASE] + (b == BTN_UP ? 3 : -3), 0, 100);
+            sparam_format(cur_s, SP_RELEASE, rel, sizeof rel);
+            say("%d RELEASE %s", cur_s + 1, rel);
+            return;
+        }
+        case BTN_A:
+            engine_unlatch_all();
+            say("ALL LET GO");
+            return;
+        case BTN_B:
+        case BTN_X:
+        case BTN_Y: return;
+        }
     switch (b) {
     case BTN_LEFT: cur_s = wrap(cur_s - 1, NS); break;
     case BTN_RIGHT: cur_s = wrap(cur_s + 1, NS); break;
@@ -534,6 +558,14 @@ static void play_action(int b)
     }
 }
 
+static void set_playmode(int latch)
+{
+    song.gp[GP_PLAYMODE] = latch ? PLAY_LATCH : PLAY_RINGS;
+    engine_unlatch_all(); /* every string starts silent, or back to its rings */
+    changed = 1;
+    say("%s", latch ? "LATCH: L1 PLUCKS, R1 BOWS, AGAIN LETS GO" : "RINGS: THE RHYTHMS PLAY");
+}
+
 static void action(int b, int repeats)
 {
     switch (b) {
@@ -545,6 +577,21 @@ static void action(int b, int repeats)
         if (held[BTN_START] || page != PAGE_PLAY) {
             start_used |= held[BTN_START];
             page = wrap(page + (b == BTN_R1 ? 1 : -1), PAGE_COUNT);
+        }
+        else if (latch_on()) { /* LATCH: L1 plucks, R1 bows; again, it lets go */
+            if (repeats)
+                return;
+            if (!live.playing)
+                engine_set_playing(1);
+            int st = engine_latch(cur_s, b == BTN_L1 ? LATCH_PLUCK : LATCH_BOW), wnd = engine_voice_wind(cur_s);
+            char rel[16];
+            sparam_format(cur_s, SP_RELEASE, rel, sizeof rel);
+            if (st)
+                say("%d %s, DRONING", cur_s + 1, st == LATCH_PLUCK ? (wnd ? "TONGUED" : "PLUCKED") : (wnd ? "BLOWN" : "BOWED"));
+            else
+                say("%d LET GO: %s", cur_s + 1, rel);
+            if (jdlog_level() == LOG_DETAIL)
+                jdlog("latch voice %d %s", cur_s + 1, st == LATCH_PLUCK ? "pluck" : st == LATCH_BOW ? "bow" : "let go");
         }
         else if (b == BTN_L1) {
             if (bowing >= 0) /* already bowing: L1 overblows / touches a harmonic */
@@ -583,6 +630,14 @@ static void action(int b, int repeats)
     case BTN_MENU: quit = 1; return;
     case BTN_L2:
     case BTN_R2: return;
+    case BTN_A:
+        if (held[BTN_START]) { /* START + A: PLAY MODE RINGS or LATCH */
+            start_used = 1;
+            if (!repeats)
+                set_playmode(!latch_on());
+            return;
+        }
+        break;
     case BTN_Y:
         if (held[BTN_START]) { /* START + Y: the projection OFF, SOFT, BRIGHT */
             start_used = 1;
@@ -952,7 +1007,10 @@ static void draw_footer(void)
     if (page != PAGE_PLAY && page != PAGE_SONG && cw_)
         h = page == PAGE_COMPOSE ? "D-PAD:MOVE Y:- X:+ B:TONGUE L1/R1:PAGE SEL:NEXT CHORD"
                                  : "D-PAD:MOVE Y:- X:+ A:MUTE B:TONGUE L1/R1:PAGE SEL:CHORD";
-    if (page == PAGE_PLAY && cw_)
+    if (page == PAGE_PLAY && latch_on())
+        h = cw_ ? "LATCH  L1:TONGUE R1:BLOW, AGAIN:LET GO  ^v:RELEASE A:ALL GO"
+                : "LATCH  L1:PLUCK R1:BOW, AGAIN:LET GO  ^v:RELEASE A:ALL GO";
+    else if (page == PAGE_PLAY && cw_)
         h = "A:ON/OFF B:FEWER X:ROT Y:NEW L1:TONGUE R1:BLOW L1+R1:OVERBLOW";
     else if (page == PAGE_PLAY)
         h = "A:ON/OFF B:FEWER X:ROT Y:NEW L1:PLUCK R1:BOW L1+R1:HARMONIC";
@@ -1318,6 +1376,48 @@ static void draw_ring(float cx, float cy, float r, const int *P, int rg, int cur
     }
 }
 
+/* LATCH: a board with a shed-roof top, like the house's walls, filled to
+ * how open the string's gate is; its state and RELEASE under it */
+static void draw_latch(int s, int x, int y, int w, int h, uint32_t col, int sel, int on)
+{
+    float slope = 14.f, x1 = x + w, yb = y + h, yt = y;
+    float lv = fminf(1.f, fmaxf(0.f, live.bow_env[s]));
+    int st = live.latch[s], wnd = engine_voice_wind(s);
+    if (lv > 0.003f) {
+        float yf = yb - lv * (yb - yt);
+        float pts[10];
+        int n = 0;
+#define PT(a, b) (pts[2 * n] = (a), pts[2 * n + 1] = (b), n++)
+        PT(x, yb);
+        if (yf >= yt + slope) /* below the roof: a flat top */
+            PT(x, yf), PT(x1, yf);
+        else if (yf >= yt) { /* in the roof: the left part under its slope */
+            float xc = x + (yt + slope - yf) / slope * w;
+            PT(x, yt + slope), PT(xc, yf), PT(x1, yf);
+        }
+        else
+            PT(x, yt + slope), PT(x1, yt);
+        PT(x1, yb);
+#undef PT
+        gfx_poly(pts, n, gfx_mix(C_BG, col, (st ? 0.25f : 0.12f) + 0.35f * lv));
+    }
+    uint32_t edge = !on ? C_OFF : st ? col : sel ? gfx_mix(C_BG, col, 0.7f) : gfx_mix(C_BG, col, 0.4f);
+    float th = st ? 2.f : 1.3f;
+    gfx_line(x, yb, x, yt + slope, th, edge);
+    gfx_line(x, yt + slope, x1, yt, th, edge);
+    gfx_line(x1, yt, x1, yb, th, edge);
+    gfx_line(x, yb, x1, yb, th, edge);
+    const char *word = st == LATCH_PLUCK ? (wnd ? "TONGUED" : "PLUCKED")
+                       : st == LATCH_BOW ? (wnd ? "BLOWN" : "BOWED")
+                       : lv > 0.02f      ? "FADING"
+                                         : (wnd ? "L1 / R1" : "L1 / R1");
+    gfx_text(x + w / 2 - gfx_text_w(word, FONT_SMALL) / 2, (int)(yb - h * 0.45f), word, st ? C_TEXT : C_DIM, FONT_SMALL);
+    char rel[16], lb[24];
+    sparam_format(s, SP_RELEASE, rel, sizeof rel);
+    snprintf(lb, sizeof lb, "REL %s", rel);
+    gfx_text(x + w / 2 - gfx_text_w(lb, FONT_SMALL) / 2, (int)yb + 6, lb, sel ? col : C_DIM, FONT_SMALL);
+}
+
 static void draw_play(void)
 {
     const int cw = SCREEN_W / NS;
@@ -1359,6 +1459,10 @@ static void draw_play(void)
         int sy = t + drop + 42;
         draw_string(x + 12, x + w - 12, sy, on ? live.meter[s] : 0.f, live.phase[s],
                     gfx_mix(col, C_TEXT, 0.6f * live.hand_env[s] + 0.4f * live.flash[s][RING_PLUCK]), on, engine_voice_wind(s));
+        if (latch_on()) { /* LATCH: one board that fills while the string drones */
+            draw_latch(s, x + 14, sy + 26, w - 28, FOOTER_Y - 44 - (sy + 26), col, sel, on);
+            continue;
+        }
         float r = 38.f, cx = x + w / 2.f;
         float pcy = sy + 20 + r + 12, bcy = pcy + 2 * r + 34;
         draw_ring(cx, pcy, r, P, RING_PLUCK, live.step[s][RING_PLUCK], live.flash[s][RING_PLUCK], col,

@@ -1130,7 +1130,7 @@ int main(int argc, char **argv)
         rms = sqrt(rms / (RATE * 8)) / 32768.0;
         struct {
             uint32_t magic;
-            int on[NS], sp[NS][24], gp[NGP], lfo[NLFO][NLP], fx[NFX];
+            int on[NS], sp[NS][24], gp[27], lfo[NLFO][NLP], fx[NFX];
             int prog_n, prog_pos, prog_note[NPROG][NS], prog_fine[NPROG][NS];
             char prog_name[NPROG][24];
         } old;
@@ -1150,6 +1150,93 @@ int main(int argc, char **argv)
                " voices %s %s body %d (want GLASS %d)\n",
                fs, fw, pk, rms, ok, engine_voice_name(song.sp[0][SP_VOICE]), engine_voice_name(song.sp[4][SP_VOICE]),
                song.fx[FX_BTYPE], BODY_GLASS);
+    }
+    /* LATCH: silent until played; a pluck starts at once and keeps droning,
+     * a bow swells in, played again it fades over its RELEASE (1.3 s) */
+    {
+        song_default();
+        engine_init(RATE);
+        engine_set_playing(1);
+        song.gp[GP_PLAYMODE] = PLAY_LATCH;
+        song.gp[GP_CHANGES] = 0;
+        song.fx[FX_DMIX] = song.fx[FX_VSEND] = 0;
+        song.fx[FX_SCOUNT] = 0;
+        for (int v = 0; v < NS; v++)
+            song.sp[v][SP_RELEASE] = 55;
+        engine_render(pcm, RATE * 2);
+        double quiet = rms_of(pcm, RATE, RATE);
+        engine_latch(1, LATCH_PLUCK);
+        engine_render(pcm, RATE / 20);
+        double pk_start = rms_of(pcm, 0, RATE / 20);
+        engine_render(pcm, RATE * 6);
+        double held = rms_of(pcm, RATE * 5, RATE);
+        engine_latch(1, LATCH_PLUCK); /* again: let go */
+        engine_render(pcm, RATE * 2);
+        double gone = rms_of(pcm, RATE + RATE / 2, RATE / 2);
+        engine_latch(3, LATCH_BOW);
+        engine_render(pcm, RATE * 3);
+        double bow_early = rms_of(pcm, 0, RATE / 10), bow_full = rms_of(pcm, RATE * 2, RATE);
+        engine_unlatch_all();
+        printf("latch: silent %.0f, pluck at once %.0f, still droning after 6 s %.0f, 1.5 s after letting go %.0f; "
+               "bow first 0.1 s %.0f, after 2 s %.0f\n",
+               quiet, pk_start, held, gone, bow_early, bow_full);
+        song.sp[2][SP_VOICE] = 1 + EX_REED; /* a wind voice latches the same way */
+        engine_render(pcm, RATE);
+        engine_latch(2, LATCH_PLUCK);
+        engine_render(pcm, RATE * 4);
+        double w_held = rms_of(pcm, RATE * 3, RATE);
+        engine_latch(2, LATCH_BOW);
+        engine_render(pcm, RATE * 2);
+        double w_gone = rms_of(pcm, RATE + RATE / 2, RATE / 2);
+        printf("latch checks: silent %d, starts %d, drones %d, fades %d, bow swells %d, wind drones %d and fades %d\n",
+               quiet < 30, pk_start > 300, held > 300, gone < held * 0.1, bow_early < bow_full * 0.5, w_held > 300,
+               w_gone < w_held * 0.1);
+    }
+    /* a v0.6 / v0.7 song (JDR13) loads: its voices kept, RELEASE and PLAY MODE new */
+    {
+        struct {
+            uint32_t magic;
+            int on[NS], sp[NS][25], gp[27], lfo[NLFO][NLP], fx[NFX];
+            int prog_n, prog_pos, prog_note[NPROG][NS], prog_fine[NPROG][NS];
+            char prog_name[NPROG][24];
+        } o13;
+        memset(&o13, 0, sizeof o13);
+        o13.magic = 0x4a44520du;
+        for (int v = 0; v < NS; v++)
+            o13.on[v] = 1, o13.sp[v][SP_LEVEL] = 60, o13.sp[v][SP_PSTEPS] = o13.sp[v][SP_PPULSES] = 4,
+            o13.sp[v][SP_VOICE] = v;
+        o13.gp[GP_SCALE] = 15, o13.gp[GP_ROOT] = 45, o13.gp[GP_BPM] = 66;
+        char p13[512];
+        snprintf(p13, sizeof p13, "%s/v07.jds", out);
+        FILE *f = fopen(p13, "wb");
+        fwrite(&o13, sizeof o13, 1, f);
+        fclose(f);
+        int ok = song_load(p13);
+        printf("save compat v0.7: load=%d scale=%s voice5=%s release=%d playmode=%d bpm=%d\n", ok,
+               engine_scale_name(song.gp[GP_SCALE]), engine_voice_name(song.sp[4][SP_VOICE]), song.sp[4][SP_RELEASE],
+               song.gp[GP_PLAYMODE], song.gp[GP_BPM]);
+    }
+    /* the LATCH screen: 1 plucked, 3 bowed, 4 fading, the rest silent */
+    {
+        song_default();
+        engine_init(RATE);
+        engine_set_playing(1);
+        song.gp[GP_PLAYMODE] = PLAY_LATCH;
+        song.gp[GP_CHANGES] = 0;
+        song.sp[3][SP_RELEASE] = 85;
+        engine_latch(0, LATCH_PLUCK);
+        engine_latch(2, LATCH_BOW);
+        engine_latch(3, LATCH_BOW);
+        int16_t buf[2 * 480];
+        for (int i = 0; i < 250; i++) {
+            engine_render(buf, 480);
+            ui_tick(10);
+            if (i == 150)
+                engine_latch(3, LATCH_BOW); /* let 4 go */
+        }
+        shot(out, "latch", fb);
+        engine_unlatch_all();
+        song.gp[GP_PLAYMODE] = PLAY_RINGS;
     }
     /* chord memory: record four chords, then play them back in order */
     {

@@ -116,6 +116,23 @@ sound their pitches through the bridge, adding a halo around the drone. On the S
 Each tuning repeats within two octaves. A second pass over the same pitches is detuned a few cents, so doubled
 strings shimmer against each other.
 
+## Latch: play each string by hand
+
+PLAY MODE (START + A, or on the SONG page) switches between **RINGS**, where the Euclidean rings play the
+strings, and **LATCH**, where the rings rest and you play:
+
+- Every string starts silent. On PLAY, pick a string with left and right, then **L1** plucks it or **R1**
+  bows it (a wind voice: tongue or blow). Either way it keeps droning, sustained by the bow or breath, with
+  no need to hold the button.
+- Press **L1 or R1 again** on that string and it lets go, fading over its own **RELEASE**: 0.05 s for a
+  clipped stop up to 20 s for a long dying ring. Up and down set the selected string's RELEASE (it is also
+  on the MIX page, in place of GATE).
+- A pluck starts at once; a bow is drawn in slowly, as it is by hand. **A** lets every string go.
+- Each column shows a board with a shed-roof top that fills while its string drones and drains as it fades,
+  with the word PLUCKED, BOWED or FADING.
+
+LATCH and the RELEASE times are saved with songs and presets.
+
 ## Rhythm: two rings per string
 
 Each string has two Euclidean rings (steps, pulses, rotation) that share one step length, from 1/16 to two bars:
@@ -333,6 +350,7 @@ on the shoulder buttons.
 | START (tap) | start / stop the drone |
 | START + L1 / R1 | previous / next page (on SOUND, COMPOSE and MIX, L1 / R1 alone also work) |
 | START + Y | the projection: SOFT, BRIGHT or OFF (remembered) |
+| START + A | PLAY MODE: RINGS or LATCH (see Latch) |
 | MENU | exit |
 
 **On SOUND, COMPOSE and MIX:** the d-pad moves to the nearest control in that direction, and Y / X lowers or
@@ -407,5 +425,5 @@ Every push runs the **build** workflow:
   `test-output`.
 
 To publish a release with the zip attached, go to **Actions → build → Run workflow** and fill in a tag such as
-`v0.7.0`. Pushing a `v*` tag, or creating a release on the website, does the same. The release text comes from
+`v0.8.0`. Pushing a `v*` tag, or creating a release on the website, does the same. The release text comes from
 `.github/release-notes.md`.

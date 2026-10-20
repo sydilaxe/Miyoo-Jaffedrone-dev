@@ -8,11 +8,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define JD_VERSION "0.7.0"
+#define JD_VERSION "0.8.0"
 
 #define NS 5
-#define NSP 25 /* params per string */
-#define NGP 27 /* global params */
+#define NSP 26 /* params per string */
+#define NGP 28 /* global params */
 #define NPROG 16 /* chords in the progression memory */
 #define NPRESET 10
 #define NLFO 2
@@ -27,12 +27,13 @@
  * (off: the bow plays continuously). Ring fields: on, steps, pulses, rotate. */
 enum { SP_NOTE, SP_FINE, SP_LEVEL, SP_BOW, SP_DECAY, SP_BRIGHT, SP_FOLD, SP_STIFF, SP_POS, SP_BUZZ,
        SP_PON, SP_PSTEPS, SP_PPULSES, SP_PROT, SP_BON, SP_BSTEPS, SP_BPULSES, SP_BROT, SP_RATE, SP_PAN,
-       SP_PCHANCE, SP_BCHANCE, SP_HARM, SP_GATE, SP_VOICE };
+       SP_PCHANCE, SP_BCHANCE, SP_HARM, SP_GATE, SP_VOICE, SP_RELEASE };
 /* SP_PCHANCE / SP_BCHANCE: the chance each pulse of the ring plays.
  * SP_HARM: a light touch at a node (OFF, or the 2nd .. 5th harmonic).
  * SP_GATE: how far the string's sound follows its own bow ring.
  * SP_VOICE: what the voice is: a string (0) or a wind voice (1 + its
- * exciter), so strings and winds can play side by side. */
+ * exciter), so strings and winds can play side by side.
+ * SP_RELEASE: in LATCH, how long the string takes to fade when let go. */
 enum { RING_PLUCK, RING_BOW, NRING };
 #define RING_P(ring, field) (SP_PON + (ring) * 4 + (field)) /* field 0 on, 1 steps, 2 pulses, 3 rotate */
 #define NSOUND SP_PON /* sound params come first */
@@ -41,7 +42,7 @@ enum { RING_PLUCK, RING_BOW, NRING };
  * string's rhythm */
 enum { GP_MODE, GP_SCALE, GP_ROOT, GP_CHANGES, GP_BPM, GP_DRIFT, GP_GLIDE, GP_CUTOFF, GP_MASTER, GP_SYNC,
        GP_MOTION, GP_HOME, GP_COLOR, GP_EVOLVE, GP_CHANCE, GP_RELATE, GP_ENGINE, GP_EXCITE, GP_MATERIAL,
-       GP_SUB, GP_SUBDIV, GP_SUBRES, GP_ATTACK, GP_RELEASE, GP_KEYLOCK, GP_MODALITY, GP_PROG };
+       GP_SUB, GP_SUBDIV, GP_SUBRES, GP_ATTACK, GP_RELEASE, GP_KEYLOCK, GP_MODALITY, GP_PROG, GP_PLAYMODE };
 /* GP_ATTACK / GP_RELEASE: how the drone fades in and out with START.
  * GP_KEYLOCK: for playing with others: the root, scale and mode stay put and
  * chords are tuned exactly. GP_MODALITY: the mode chords are drawn from in
@@ -50,6 +51,11 @@ enum { GP_MODE, GP_SCALE, GP_ROOT, GP_CHANGES, GP_BPM, GP_DRIFT, GP_GLIDE, GP_CU
 enum { MODAL_AUTO, MODAL_IONIAN, MODAL_DORIAN, MODAL_PHRYGIAN, MODAL_LYDIAN, MODAL_MIXOLYDIAN, MODAL_AEOLIAN,
        MODAL_LOCRIAN, NMODAL };
 enum { PROG_FREE, PROG_RECORD, PROG_PLAY, NPROGMODE };
+/* GP_PLAYMODE: RINGS (the Euclidean rings play the strings) or LATCH (the
+ * rings rest; each string sounds when plucked or bowed by hand and drones
+ * until it is played again, then fades over its SP_RELEASE) */
+enum { PLAY_RINGS, PLAY_LATCH, NPLAYMODE };
+enum { LATCH_OFF, LATCH_PLUCK, LATCH_BOW };
 /* GP_SUB*: every voice can sound undertones: its pitch divided (an octave,
  * a twelfth or two octaves below, or both octave and twelfth), as a
  * resonance that rings (SUB RES) under the voice. */
@@ -117,6 +123,7 @@ typedef struct {
     volatile float hand_env[NS];    /* the hand bow alone */
     volatile float symp_meter;      /* sympathetic strings, all together */
     volatile uint32_t chords;     /* counts chord changes (manual and CHANGES) */
+    volatile int latch[NS];        /* LATCH: how each string was started (LATCH_OFF when let go) */
     /* the last SCOPE_N samples of the output (mono), for the projection;
      * scope_w counts samples written */
     volatile float scope[SCOPE_N];
@@ -160,6 +167,10 @@ void engine_set_playing(int on);
 void engine_pluck(int s);
 void engine_bow(int s, int on); /* bow by hand while held, over the rings */
 void engine_overblow(int s, int on); /* while bowing: overblow (wind) or touch a harmonic (strings) */
+/* LATCH: a pluck or bow (LATCH_PLUCK, LATCH_BOW) starts string s droning;
+ * played again, it fades over its RELEASE. Returns the new state. */
+int engine_latch(int s, int how);
+void engine_unlatch_all(void); /* every string lets go */
 void engine_next_chord(void);  /* the next chord of the progression */
 void engine_set_scale(int sc); /* retune: each string moves to the nearest degree */
 void engine_euclid_random(int s, int ring); /* a new simple rhythm for one ring */

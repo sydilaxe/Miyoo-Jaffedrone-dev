@@ -3,6 +3,10 @@ Jaffedrone test build for the Miyoo Mini Plus (OnionOS).
 **Install:** unzip `Jaffedrone-miyoo.zip` at the root of the SD card (it contains `App/Jaffedrone/`),
 then open **Apps → Jaffedrone**.
 
+**New in 0.8**
+- LATCH play mode (START + A): every string is silent until you pluck (L1) or bow (R1) it, then drones
+  until you play it again, and fades over its own RELEASE (0.05 to 20 s; up and down on PLAY).
+
 **New in 0.7**
 - A new wordmark, after a drawing and the Jaffe house, and a start-up screen on the house's roofline.
 - A projection behind the screens: the spectrum as siding boards with roof-valley tops, and binaural as
