@@ -189,6 +189,7 @@ void gfx_line(float x0, float y0, float x1, float y1, float t, uint32_t c)
         }
 }
 
+static int poly_alpha = 255;
 static void poly_fill(const float *xy, int n, uint32_t c, float period, float x0)
 {
     float ymin = 1e9f, ymax = -1e9f;
@@ -214,8 +215,10 @@ static void poly_fill(const float *xy, int n, uint32_t c, float period, float x0
         for (int a = 0; a + 1 < k; a += 2) {
             int xa = (int)ceilf(xs[a] - .5f), xb = (int)floorf(xs[a + 1] - .5f);
             if (period <= 0.f) {
-                if (xb >= xa)
+                if (xb >= xa && poly_alpha >= 255)
                     gfx_fill(xa, y, xb - xa + 1, 1, c);
+                else if (xb >= xa)
+                    gfx_fill_a(xa, y, xb - xa + 1, 1, c, poly_alpha);
                 continue;
             }
             /* vertical grooves, one pixel wide, every period from x0 */
@@ -228,3 +231,9 @@ static void poly_fill(const float *xy, int n, uint32_t c, float period, float x0
 
 void gfx_poly(const float *xy, int n, uint32_t c) { poly_fill(xy, n, c, 0.f, 0.f); }
 void gfx_poly_grooves(const float *xy, int n, uint32_t c, float period, float x0) { poly_fill(xy, n, c, period, x0); }
+void gfx_poly_a(const float *xy, int n, uint32_t c, int alpha)
+{
+    poly_alpha = alpha;
+    poly_fill(xy, n, c, 0.f, 0.f);
+    poly_alpha = 255;
+}

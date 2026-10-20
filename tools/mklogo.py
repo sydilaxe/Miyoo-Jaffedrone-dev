@@ -28,12 +28,25 @@ def arc(cx, cy, rx, ry, a0, a1, n=12):
 
 
 def J(w):
-    r = w / 2  # the hook: a half ring under the stem
+    """a flat top bar, the stem, and a round hook whose short spur ends level"""
+    r = w / 2
     cy = H - r
-    tab = S * 1.45
-    return ([(0, 0), (w, 0)] + arc(r, cy, r, r, 0, 180, 18)[:]
-            + [(0, cy - 12), (S, cy - 12)] + arc(r, cy, r - S, r - S, 180, 0, 14)
-            + [(w - S, S), (S * 0.9, S), (S * 0.9, tab), (0, tab)])
+    return ([(0, 0), (w, 0)] + arc(r, cy, r, r, 0, 180, 18) + arc(r, cy, r - S, r - S, 180, 0, 14)
+            + [(w - S, S), (0, S)])
+
+
+def J_square(w):
+    """a flat top bar, the stem, a flat foot with a rounded corner and a short spur"""
+    R = S
+    return ([(0, 0), (w, 0)] + arc(w - R, H - R, R, R, 0, 90, 8) + [(0, H), (0, H - S * 1.6), (S, H - S * 1.6), (S, H - S),
+                                                                   (w - S, H - S), (w - S, S), (0, S)])
+
+
+def J_tail(w):
+    """a flat top bar, the stem, and a hook that turns only part way"""
+    r = w / 2
+    cy = H - r
+    return [(0, 0), (w, 0)] + arc(r, cy, r, r, 0, 140, 16) + arc(r, cy, r - S, r - S, 140, 0, 12) + [(w - S, S), (0, S)]
 
 
 def A(w):
@@ -73,7 +86,7 @@ def N(w):
     return [(0, 0), (S, 0), (w - S, H * 0.62), (w - S, 0), (w, 0), (w, H), (w - S, H), (S, H * 0.38), (S, H), (0, H)]
 
 
-LETTERS = [(J, 58), (A, 74), (F, 52), (F, 52), (E, 48), (D, 62), (R, 62), (O, 64), (N, 66), (E, 48)]
+LETTERS = [(J, 62), (A, 74), (F, 52), (F, 52), (E, 48), (D, 62), (R, 62), (O, 64), (N, 66), (E, 48)]
 VALLEY_AFTER = 4  # the roofs meet after the first E
 
 

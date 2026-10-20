@@ -22,7 +22,7 @@ jobs:
       - name: Build
         run: |
           # generated files are committed; keep make from regenerating them
-          touch src/font_data.h src/logo_data.h dist/Jaffedrone/icon.png
+          touch src/font_data.h src/logo_data.h dist/Jaffedrone/icon.png dist/Jaffedrone/splash.jdi
           command -v zip >/dev/null || (apt-get update && apt-get install -y zip)
           make package CROSS=/opt/miyoomini-toolchain/usr/bin/arm-linux-gnueabihf-
           ls -l build/Jaffedrone-miyoo.zip
@@ -38,7 +38,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build and run the test harness
         run: |
-          touch src/font_data.h src/logo_data.h dist/Jaffedrone/icon.png
+          touch src/font_data.h src/logo_data.h dist/Jaffedrone/icon.png dist/Jaffedrone/splash.jdi
           make build/jd_test
           mkdir -p build/test
           build/jd_test build/test | tee build/test/results.txt

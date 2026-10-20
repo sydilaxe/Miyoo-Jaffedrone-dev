@@ -27,6 +27,9 @@
 #define C_SEA 0x7fd1a8
 #define C_RED 0xff5a50
 #define C_OFF 0x3a3f4c
+#define C_CEDARWOOD 0xb26a3e /* the ceiling boards */
+#define C_SLATE 0x4a525e      /* the wordmark */
+#define C_SLATE_D 0x2c323c
 #define HEADER_H 46
 #define BODY_Y 58
 #define FOOTER_Y 456
@@ -853,31 +856,44 @@ static void draw_string(int x0, int x1, int y, float amp, float ph, uint32_t col
 
 /* ---------------------------------------------------------------- pages */
 
-/* the wordmark (tools/mklogo.py): block letters whose tops follow the
- * house's two roofs, h pixels high, filled, with board grooves when there is
- * room for them, under an outline */
-static void draw_logo(float x, float y, float h, float stroke, uint32_t col, uint32_t fill, uint32_t groove)
+/* the wordmark (tools/mklogo.py): solid block letters whose tops follow the
+ * house's two roofs, h pixels high, with a fine darker edge */
+static void draw_logo_a(float x, float y, float h, float edge, uint32_t fill, uint32_t col, int alpha)
 {
     float k = h / LOGO_H, xy[2 * LOGO_MAXPT];
     for (int l = 0; l < LOGO_NLETTER; l++) {
         int a = logo_start[l], n = logo_start[l + 1] - a;
         for (int i = 0; i < n; i++)
             xy[2 * i] = x + logo_pt[a + i][0] * k, xy[2 * i + 1] = y + logo_pt[a + i][1] * k;
-        gfx_poly(xy, n, fill);
-        if (h >= 60.f) /* the siding, a board every 11 units */
-            gfx_poly_grooves(xy, n, groove, 44.f * k, x + 22.f * k);
-        for (int i = 0, j = n - 1; i < n; j = i++)
-            gfx_line(xy[2 * j], xy[2 * j + 1], xy[2 * i], xy[2 * i + 1], stroke, col);
+        gfx_poly_a(xy, n, fill, alpha);
+        for (int i = 0, j = n - 1; i < n; j = i++) /* the edge also smooths the fill's steps */
+            gfx_line(xy[2 * j], xy[2 * j + 1], xy[2 * i], xy[2 * i + 1], edge, col);
     }
+}
+
+static void draw_logo(float x, float y, float h, float edge, uint32_t fill, uint32_t col)
+{
+    draw_logo_a(x, y, h, edge, fill, col, 255);
 }
 
 static void draw_header(void)
 {
+    int x0_tabs;
     gfx_fill(0, 0, SCREEN_W, HEADER_H, C_PANEL);
     /* the roofline: one copper edge across the band */
     slant(150, HEADER_H - 3, SCREEN_W, HEADER_H - 16, 3, C_COPPER);
-    draw_logo(8, 8, 28, 1.25f, C_SAND, gfx_mix(C_PANEL, C_SAND, 0.16f), C_SAND);
-    int x = 204;
+    /* the wordmark on a cedar board, its top cut to the two roofs */
+    {
+        float h = 26.f, k = h / LOGO_H, lx = 14.f, ly = 9.f, w = LOGO_W * k;
+        float xy[10] = {0, 0, lx + LOGO_VALLEY_X * k, ly - 5 + LOGO_VALLEY_Y * k, lx + w + 12, 0, lx + w + 4, HEADER_H - 6, 0,
+                        HEADER_H - 6};
+        xy[1] = ly - 5 + (LOGO_ROOF_L - (LOGO_VALLEY_Y - LOGO_ROOF_L) * lx / (LOGO_VALLEY_X * k)) * k;
+        xy[5] = ly - 5 + LOGO_ROOF_R * k;
+        gfx_poly(xy, 5, C_CEDARWOOD);
+        draw_logo(lx, ly, h, 1.f, C_SLATE, C_SLATE_D);
+        x0_tabs = (int)(lx + w + 22);
+    }
+    int x = x0_tabs;
     for (int p = 0; p < PAGE_COUNT; p++) {
         int w = gfx_text_w(page_names[p], FONT_SMALL) + 12;
         para(x, 10, w, 24, 6, p == page ? C_COPPER : C_PANEL2);
@@ -1368,21 +1384,57 @@ static void draw_quiet(void)
     gfx_text((SCREEN_W - gfx_text_w(cn, FONT_SMALL)) / 2, SCREEN_H - 34, cn, C_DIM, FONT_SMALL);
 }
 
-/* the start-up screen: the wordmark large, with its board grooves, under
- * the house's two roofs */
-static void draw_splash(void)
+/* the start-up screen: the house's roofline (splash.jdi, from
+ * tools/mksplash.py) with the wordmark on the siding below the valley, its
+ * own two roofs answering the house's */
+static uint8_t *splash_px;
+static uint32_t splash_pal[256];
+static int splash_tried;
+
+static void splash_load(void)
 {
-    float h = 80.f, k = h / LOGO_H, w = LOGO_W * k, x = (SCREEN_W - w) / 2, y = 190.f, lift = 18.f;
-    float lx = x - 34, rx = x + w + 30; /* the eaves reach past the letters */
-    float ly = y - lift + (LOGO_ROOF_L - (LOGO_VALLEY_Y - LOGO_ROOF_L) * 34.f / (LOGO_VALLEY_X * k)) * k;
-    float vx = x + LOGO_VALLEY_X * k, vy = y - lift + LOGO_VALLEY_Y * k;
-    float ry = y - lift + (LOGO_ROOF_R + (LOGO_ROOF_R - LOGO_VALLEY_Y) * 30.f / ((LOGO_W - LOGO_VALLEY_X) * k)) * k;
-    gfx_line(lx, ly, vx, vy, 3.f, C_COPPER);
-    gfx_line(vx, vy, rx, ry, 3.f, C_COPPER);
-    draw_logo(x, y, h, 2.f, C_SAND, gfx_mix(C_BG, C_SAND, 0.10f), gfx_mix(C_BG, C_SAND, 0.24f));
+    splash_tried = 1;
+    char p[3][512];
+    snprintf(p[0], sizeof p[0], "%s/splash.jdi", preset_dir);
+    snprintf(p[1], sizeof p[1], "splash.jdi");
+    snprintf(p[2], sizeof p[2], "dist/Jaffedrone/splash.jdi");
+    for (int i = 0; i < 3 && !splash_px; i++) {
+        FILE *f = fopen(p[i], "rb");
+        if (!f)
+            continue;
+        unsigned char hd[8], pal[768];
+        if (fread(hd, 1, 8, f) == 8 && !memcmp(hd, "JDI1", 4) && (hd[4] | hd[5] << 8) == SCREEN_W &&
+            (hd[6] | hd[7] << 8) == SCREEN_H && fread(pal, 1, 768, f) == 768) {
+            for (int c = 0; c < 256; c++)
+                splash_pal[c] = (uint32_t)pal[3 * c] << 16 | pal[3 * c + 1] << 8 | pal[3 * c + 2];
+            splash_px = malloc(SCREEN_W * SCREEN_H);
+            if (splash_px && fread(splash_px, 1, SCREEN_W * SCREEN_H, f) != SCREEN_W * SCREEN_H) {
+                free(splash_px);
+                splash_px = NULL;
+            }
+        }
+        fclose(f);
+    }
+}
+
+static void draw_splash(uint32_t *fb)
+{
+    if (!splash_tried)
+        splash_load();
+    float h = 66.f, k = h / LOGO_H;
+    float x = 346.f - LOGO_VALLEY_X * k, y = 290.f - LOGO_VALLEY_Y * k; /* its valley under the house's */
+    if (splash_px)
+        for (int i = 0; i < SCREEN_W * SCREEN_H; i++)
+            fb[i] = splash_pal[splash_px[i]];
+    else { /* no picture: the two roofs drawn */
+        gfx_clear(0x9db4f0);
+        float xy[10] = {0, 17, 346, 221, 640, 74, 640, 480, 0, 480};
+        gfx_poly(xy, 5, 0xdcdcd8);
+    }
+    draw_logo_a(x, y, h, 1.4f, C_SLATE, C_SLATE_D, 222); /* painted on the boards: they show faintly through */
     char v[24];
     snprintf(v, sizeof v, "v%s", JD_VERSION);
-    gfx_text((SCREEN_W - gfx_text_w(v, FONT_SMALL)) / 2, (int)(y + h + 26), v, C_DIM, FONT_SMALL);
+    gfx_text((int)(x + LOGO_VALLEY_X * k) - gfx_text_w(v, FONT_SMALL) / 2, (int)(y + h + 18), v, C_SLATE, FONT_SMALL);
 }
 
 void ui_draw(uint32_t *fb)
@@ -1390,8 +1442,12 @@ void ui_draw(uint32_t *fb)
     gfx_target(fb);
     gfx_clear(C_BG);
     if (splash_ms > 0) {
-        draw_splash();
+        draw_splash(fb);
         return;
+    }
+    if (splash_px) { /* done with the picture */
+        free(splash_px);
+        splash_px = NULL;
     }
     if (page == PAGE_PLAY && quiet) {
         draw_quiet();

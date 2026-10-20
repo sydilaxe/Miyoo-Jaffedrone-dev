@@ -17,7 +17,7 @@ HDR    := src/engine.h src/ui.h src/gfx.h src/sync.h src/log.h src/font_data.h s
 CFLAGS := -O2 -std=gnu11 -Wall -Wextra -fno-math-errno
 APP    := dist/Jaffedrone
 
-all: $(APP)/jaffedrone $(APP)/icon.png
+all: $(APP)/jaffedrone $(APP)/icon.png $(APP)/splash.jdi
 
 src/logo_data.h: tools/mklogo.py
 	python3 tools/mklogo.py $@
@@ -27,6 +27,9 @@ src/font_data.h: tools/mkfont.py
 
 $(APP)/icon.png: tools/mkicon.py
 	python3 tools/mkicon.py $@
+
+$(APP)/splash.jdi: tools/mksplash.py art/roofline.jpg
+	python3 tools/mksplash.py art/roofline.jpg $@
 
 # Onion's MI_AO/MI_GFX-backed SDL 1.2 (LGPL), linked against but not committed
 SDL_URL := https://raw.githubusercontent.com/OnionUI/Onion/main/static/build/.tmp_update/lib/parasyte/libSDL-1.2.so.0
@@ -76,7 +79,7 @@ miyoo: $(SRC) src/main_sdl.c $(HDR) $(SDL_LIB)
 	$(CROSS)gcc -marm -mcpu=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard $(CFLAGS) -I$(SDL_INC) -o $(APP)/jaffedrone \
 		$(SRC) src/main_sdl.c $(SDL_LIB) -lm -lpthread -Wl,--allow-shlib-undefined -s
 
-package: miyoo
+package: miyoo $(APP)/splash.jdi
 	rm -rf build/sd build/Jaffedrone-miyoo.zip
 	mkdir -p build/sd/App
 	cp -r $(APP) build/sd/App/

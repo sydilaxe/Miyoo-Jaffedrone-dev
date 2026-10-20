@@ -339,6 +339,9 @@ The audio thread only fills counters; all writing happens in the main thread.
 ## Build
 
 - `make` cross-compiles `dist/Jaffedrone/jaffedrone` with zig against Onion's own SDL 1.2.
+- The wordmark is drawn from outlines made by `tools/mklogo.py` (`src/logo_data.h`). The start-up screen's
+  picture, the Jaffe house's roofline, is made from `art/roofline.jpg` by `tools/mksplash.py`
+  (`dist/Jaffedrone/splash.jdi`, a 640x480 picture with 256 colours).
 - `make test` renders a WAV and screenshots into `build/test` on the host, and checks:
   - tuning, including just intervals;
   - glide;
