@@ -28,7 +28,7 @@ src/font_data.h: tools/mkfont.py
 $(APP)/icon.png: tools/mkicon.py
 	python3 tools/mkicon.py $@
 
-$(APP)/splash.jdi: tools/mksplash.py art/roofline.jpg
+$(APP)/splash.jdi: tools/mksplash.py art/roofline.jpg src/logo_data.h src/ui.c
 	python3 tools/mksplash.py art/roofline.jpg $@
 
 # Onion's MI_AO/MI_GFX-backed SDL 1.2 (LGPL), linked against but not committed
