@@ -34,8 +34,8 @@ void (*ui_lock)(void) = nop;
 void (*ui_unlock)(void) = nop;
 
 static const uint32_t scol[NS] = {0xc9a67c, 0xad7f61, 0xd9c3a0, 0x9fb7a4, 0x7f9aa6};
-static const char *const page_names[PAGE_COUNT] = {"PLAY", "STRINGS", "DRONE", "MOD", "FX"};
-static int page, cur_s, cur_p, gcur, mcur_l, mcur_p, fcur_c, fcur_p;
+static const char *const page_names[PAGE_COUNT] = {"PLAY", "SOUND", "COMPOSE", "MIX"};
+static int page, cur_s;
 static int ring;  /* PLAY: the selected ring of the selected string */
 static int quiet; /* PLAY: the quiet view, strings and rings only */
 static int l2_used, r2_used;
@@ -67,41 +67,153 @@ int ui_take_changed(void)
 
 /* ------------------------------------------------------------- controls */
 
-static int *cur_value(const ParamDef **d)
-{
-    switch (page) {
-    case PAGE_STRINGS: *d = sparam_def(cur_p); return &song.sp[cur_s][cur_p];
-    case PAGE_DRONE: *d = gparam_def(gcur); return &song.gp[gcur];
-    case PAGE_MOD: *d = lparam_def(mcur_p); return &song.lfo[mcur_l][mcur_p];
-    default: *d = fparam_def(fcur_c * 3 + fcur_p); return &song.fx[fcur_c * 3 + fcur_p];
-    }
-}
-
 static void set_scale(int sc)
 {
     engine_set_scale(wrap(sc, engine_nscales()));
     say("%s", engine_scale_name(song.gp[GP_SCALE]));
 }
 
+/* ---------------------------------------------------------------- cells
+ *
+ * The SOUND, COMPOSE and MIX pages are laid out as cells, each one
+ * parameter; the d-pad moves to the nearest cell in its direction. */
+enum { CK_S, CK_G, CK_L, CK_F }; /* string, global, LFO, effect */
+typedef struct {
+    short x, y, w, h;
+    char kind, a, b;
+} Cell;
+#define MAXC 64
+static Cell cells[MAXC];
+static int ncell, sel_cell[PAGE_COUNT];
+
+static void cell(int x, int y, int w, int h, int kind, int a, int b)
+{
+    if (ncell < MAXC)
+        cells[ncell++] = (Cell){(short)x, (short)y, (short)w, (short)h, (char)kind, (char)a, (char)b};
+}
+
+/* SOUND: per-string tone above, the shared resonance below */
+static const int sound_rows[9] = {SP_NOTE, SP_FINE, SP_BOW, SP_DECAY, SP_BRIGHT, SP_FOLD, SP_STIFF, SP_POS, SP_BUZZ};
+#define SOUND_Y 106
+#define SOUND_RH 30
+#define BAND_Y (SOUND_Y + 9 * SOUND_RH + 4)
+/* COMPOSE: the progression on the left, its controls on the right */
+static const int comp_a[6] = {GP_SCALE, GP_ROOT, GP_MODE, GP_CHANGES, GP_GLIDE, GP_BPM};
+static const int comp_b[6] = {GP_MOTION, GP_HOME, GP_COLOR, GP_EVOLVE, GP_DRIFT, GP_SYNC};
+#define COMP_X 268
+#define COMP_CW 184
+#define LFO_Y 286
+/* MIX: a strip per string, master, then delay, reverb and gate */
+#define MIX_FX_Y 206
+#define MIX_FXC_Y 300
+
+static void layout(int pg)
+{
+    ncell = 0;
+    const int cw = SCREEN_W / NS;
+    switch (pg) {
+    case PAGE_SOUND:
+        for (int r = 0; r < 9; r++)
+            for (int s = 0; s < NS; s++)
+                cell(s * cw + 3, SOUND_Y + r * SOUND_RH, cw - 6, SOUND_RH - 3, CK_S, s, sound_rows[r]);
+        cell(3, BAND_Y, 154, 32, CK_F, 0, FX_SYMP);
+        cell(163, BAND_Y, 154, 32, CK_F, 0, FX_BODY);
+        cell(323, BAND_Y, 154, 32, CK_F, 0, FX_BTYPE);
+        cell(483, BAND_Y, 154, 32, CK_G, 0, GP_CUTOFF);
+        for (int i = 0; i < 5; i++)
+            cell(i * cw + 3, BAND_Y + 36, cw - 6, 34, CK_F, 0, FX_SCOUNT + i);
+        break;
+    case PAGE_COMPOSE:
+        for (int r = 0; r < 6; r++) {
+            cell(COMP_X, BODY_Y + r * 34, COMP_CW - 6, 31, CK_G, 0, comp_a[r]);
+            cell(COMP_X + COMP_CW, BODY_Y + r * 34, COMP_CW - 6, 31, CK_G, 0, comp_b[r]);
+        }
+        for (int l = 0; l < NLFO; l++)
+            for (int p = 0; p < NLP; p++)
+                cell(COMP_X + l * COMP_CW, LFO_Y + p * 41, COMP_CW - 6, 38, CK_L, l, p);
+        break;
+    case PAGE_MIX:
+        for (int s = 0; s < NS; s++) {
+            cell(s * cw + 3, BODY_Y + 42, cw - 6, 31, CK_S, s, SP_LEVEL);
+            cell(s * cw + 3, BODY_Y + 76, cw - 6, 31, CK_S, s, SP_PAN);
+        }
+        cell(3, BODY_Y + 112, 314, 31, CK_G, 0, GP_MASTER);
+        cell(323, BODY_Y + 112, 314, 31, CK_F, 0, FX_SLEVEL);
+        for (int c = 0; c < 3; c++)
+            for (int p = 0; p < 3; p++)
+                cell(c * 213 + 4, MIX_FXC_Y + p * 50, 205, 46, CK_F, 0, c * 3 + p);
+        break;
+    }
+}
+
+static int *cell_ref(const Cell *c, const ParamDef **d)
+{
+    switch (c->kind) {
+    case CK_S: *d = sparam_def(c->b); return &song.sp[(int)c->a][(int)c->b];
+    case CK_G: *d = gparam_def(c->b); return &song.gp[(int)c->b];
+    case CK_L: *d = lparam_def(c->b); return &song.lfo[(int)c->a][(int)c->b];
+    default: *d = fparam_def(c->b); return &song.fx[(int)c->b];
+    }
+}
+
+static void cell_format(const Cell *c, char *v, int n)
+{
+    switch (c->kind) {
+    case CK_S: sparam_format(c->a, c->b, v, n); break;
+    case CK_G: gparam_format(c->b, v, n); break;
+    case CK_L: lparam_format(c->a, c->b, v, n); break;
+    default: fparam_format(c->b, v, n); break;
+    }
+}
+
+/* the nearest cell from the selected one in a direction */
+static void nav(int dx, int dy)
+{
+    layout(page);
+    int cur = sel_cell[page] < ncell ? sel_cell[page] : 0, best = cur;
+    float cx = cells[cur].x + cells[cur].w / 2.f, cy = cells[cur].y + cells[cur].h / 2.f, bc = 1e9f;
+    for (int i = 0; i < ncell; i++) {
+        float ex = cells[i].x + cells[i].w / 2.f - cx, ey = cells[i].y + cells[i].h / 2.f - cy;
+        float along = ex * dx + ey * dy, across = fabsf(dx ? ey : ex);
+        if (along < 4.f)
+            continue;
+        float cost = along + 3.f * across;
+        if (cost < bc)
+            bc = cost, best = i;
+    }
+    sel_cell[page] = best;
+}
+
 static void adjust(int dir, int repeats)
 {
+    layout(page);
+    if (sel_cell[page] >= ncell)
+        return;
+    const Cell *c = &cells[sel_cell[page]];
     const ParamDef *d;
-    int *v = cur_value(&d);
+    int *v = cell_ref(c, &d);
     int step = (repeats > 12 && d->max - d->min > 30) ? 4 : 1;
     int nv = clampi(*v + dir * step, d->min, d->max);
     if (nv == *v)
         return;
-    if (page == PAGE_DRONE && gcur == GP_SCALE) {
+    if (c->kind == CK_G && c->b == GP_SCALE) {
         set_scale(nv);
         return;
     }
     *v = nv;
-    if (page == PAGE_DRONE && gcur == GP_BPM)
+    if (c->kind == CK_G && c->b == GP_BPM)
         engine_set_bpm((float)nv);
-    if (page == PAGE_DRONE && gcur == GP_SYNC)
+    if (c->kind == CK_G && c->b == GP_SYNC)
         engine_set_rate(1.0);
-    if (page == PAGE_DRONE && gcur == GP_MODE)
+    if (c->kind == CK_G && c->b == GP_MODE)
         say("%s", nv == MODE_MONO ? "MONO: ALL STRINGS FOLLOW STRING 1" : "CHORD: EACH STRING ITS OWN NOTE");
+}
+
+/* the string of the selected cell, or -1 */
+static int cell_string(void)
+{
+    layout(page);
+    return sel_cell[page] < ncell && cells[sel_cell[page]].kind == CK_S ? cells[sel_cell[page]].a : -1;
 }
 
 /* PLAY: change one field of the selected ring and show the pattern */
@@ -219,39 +331,27 @@ static void action(int b, int repeats)
         play_action(b);
         return;
     }
+    int cs = cell_string();
     switch (b) {
     case BTN_Y: adjust(-1, repeats); return;
     case BTN_X: adjust(+1, repeats); return;
-    case BTN_B:
-        if (page == PAGE_STRINGS)
-            engine_pluck(cur_s);
+    case BTN_UP: nav(0, -1); return;
+    case BTN_DOWN: nav(0, 1); return;
+    case BTN_LEFT: nav(-1, 0); return;
+    case BTN_RIGHT: nav(1, 0); return;
+    case BTN_A: /* mute the string the cell belongs to */
+        if (cs >= 0) {
+            song.on[cs] = !song.on[cs];
+            say("STRING %d %s", cs + 1, song.on[cs] ? "ON" : "MUTED");
+        }
+        return;
+    case BTN_B: /* pluck that string, or all of them */
+        if (cs >= 0)
+            engine_pluck(cs);
         else
             for (int s = 0; s < NS; s++)
                 engine_pluck(s);
         return;
-    }
-    int dir = b == BTN_DOWN ? 1 : b == BTN_UP ? -1 : 0;
-    int side = b == BTN_RIGHT ? 1 : b == BTN_LEFT ? -1 : 0;
-    switch (page) {
-    case PAGE_STRINGS:
-        cur_s = wrap(cur_s + side, NS);
-        cur_p = wrap(cur_p + dir, NSOUND);
-        if (b == BTN_A) {
-            song.on[cur_s] = !song.on[cur_s];
-            if (song.on[cur_s])
-                engine_pluck(cur_s);
-            say("STRING %d %s", cur_s + 1, song.on[cur_s] ? "ON" : "OFF");
-        }
-        break;
-    case PAGE_DRONE: gcur = wrap(gcur + dir, NGP); break;
-    case PAGE_MOD:
-        mcur_l = wrap(mcur_l + side, NLFO);
-        mcur_p = wrap(mcur_p + dir, NLP);
-        break;
-    default:
-        fcur_c = wrap(fcur_c + side, 4);
-        fcur_p = wrap(fcur_p + dir, 3);
-        break;
     }
 }
 
@@ -453,10 +553,9 @@ static void draw_footer(void)
 {
     static const char *const hints[PAGE_COUNT] = {
         "A:BOW B:PLUCK ^v:RING ON/OFF X/Y:PULSES L2:EDIT R2:SOUND SEL:CHORD",
-        "<>:STRING ^v:PARAM Y:- X:+ A:ON/OFF B:PLUCK SEL:CHORD START:DRONE",
-        "^v:PARAM Y:- X:+ B:PLUCK ALL SEL:NEW CHORD START:DRONE",
-        "<>:LFO ^v:PARAM Y:- X:+ B:PLUCK ALL START:DRONE",
-        "<>:SECTION ^v:PARAM Y:- X:+ B:PLUCK ALL START:DRONE",
+        "D-PAD:MOVE Y:- X:+ A:MUTE B:PLUCK SEL:CHORD START:DRONE",
+        "D-PAD:MOVE Y:- X:+ B:PLUCK ALL SEL:NEXT CHORD START:DRONE",
+        "D-PAD:MOVE Y:- X:+ A:MUTE B:PLUCK SEL:CHORD START:DRONE",
     };
     const char *h = hints[page];
     if (page == PAGE_PLAY && held[BTN_L2])
@@ -479,122 +578,190 @@ static void draw_toast(void)
     gfx_text(x + 16, y + 6, toast, C_TEXT, FONT_SMALL);
 }
 
-static void draw_strings(void)
+/* the colour of a cell: its string's, or its section's */
+static uint32_t cell_col(const Cell *c)
+{
+    if (c->kind == CK_S)
+        return scol[(int)c->a];
+    if (c->kind == CK_L)
+        return c->a ? C_SAND : C_COPPER;
+    if (c->kind == CK_F && c->b >= FX_SCOUNT)
+        return C_SEA;
+    if (c->kind == CK_F && c->b >= FX_SYMP)
+        return C_SAND;
+    if (page == PAGE_COMPOSE && c->kind == CK_G && c->b >= GP_MOTION)
+        return C_SEA;
+    if (page == PAGE_MIX && c->kind == CK_F && c->b < FX_SYMP)
+        return c->b < 3 ? C_COPPER : c->b < 6 ? C_SAND : C_SEA;
+    return c->kind == CK_G && c->b == GP_CUTOFF ? C_SAND : C_COPPER;
+}
+
+static void draw_cells(void)
+{
+    layout(page);
+    for (int i = 0; i < ncell; i++) {
+        const Cell *c = &cells[i];
+        const ParamDef *d;
+        int *v = cell_ref(c, &d);
+        char val[24];
+        cell_format(c, val, sizeof val);
+        float t = (float)(*v - d->min) / (d->max - d->min);
+        int on = c->kind == CK_S ? song.on[(int)c->a] : 1;
+        if (c->kind == CK_F && c->b > FX_SCOUNT && song.fx[FX_SCOUNT] == 0)
+            on = 0;
+        if (c->kind == CK_S && c->b == SP_NOTE && song.gp[GP_MODE] == MODE_MONO && c->a > 0)
+            on = 0;
+        param_row(c->x, c->y, c->w, c->h, i == sel_cell[page], on, d->name, val, t, d->min < 0, cell_col(c));
+    }
+}
+
+/* the five strings as a header: a long roof falling across them */
+static void string_heads(int y0, int h)
 {
     const int cw = SCREEN_W / NS;
-    const int hh = 72, y0 = BODY_Y + hh + 4, rh = (FOOTER_Y - 4 - y0) / NSOUND;
+    int cs = cell_string();
     for (int s = 0; s < NS; s++) {
-        int x = s * cw + 3, w = cw - 6;
-        int on = song.on[s], sel = s == cur_s;
+        int x = s * cw + 3, w = cw - 6, on = song.on[s];
         uint32_t col = scol[s];
-        /* one long roof falls across the five columns */
-        int drop = 6, top = BODY_Y + s * drop;
-        roof(x, top, w, hh - s * drop, drop, sel ? gfx_mix(C_PANEL2, col, 0.14f) : C_PANEL);
-        if (sel)
-            gfx_fill(x, BODY_Y + hh - 3, w, 3, col);
-        char nm[24], s1[16];
-        int note = song.gp[GP_MODE] == MODE_MONO ? song.sp[0][SP_NOTE] : song.sp[s][SP_NOTE];
-        engine_degree_name(note, s1, sizeof s1);
-        snprintf(nm, sizeof nm, "%d %s", s + 1, s1);
-        gfx_text(x + 8, top + drop + 2, nm, on ? col : C_DIM, FONT_SMALL);
-        const char *ot = on ? "ON" : "OFF";
-        gfx_text(x + w - 8 - gfx_text_w(ot, FONT_SMALL), top + drop + 2, ot, on ? C_SEA : C_DIM, FONT_SMALL);
-        draw_string(x + 12, x + w - 12, BODY_Y + 56, on ? live.meter[s] : 0.f, live.phase[s], col, on);
+        roof(x, y0, w, h, 5, s == cs ? gfx_mix(C_PANEL2, col, 0.14f) : C_PANEL);
+        char nm[24], dn[16];
+        engine_degree_name(song.gp[GP_MODE] == MODE_MONO ? song.sp[0][SP_NOTE] : song.sp[s][SP_NOTE], dn, sizeof dn);
+        snprintf(nm, sizeof nm, "%d %s", s + 1, dn);
+        gfx_text(x + 8, y0 + 1, nm, on ? col : C_DIM, FONT_SMALL);
+        if (!on)
+            gfx_fill(x + w - 26, y0 + 12, 18, 4, C_RED);
+        draw_string_big(x + 12, x + w - 12, y0 + h - 9, on ? live.meter[s] : 0.f, live.phase[s], col, on, 0.6f);
+    }
+}
 
-        for (int p = 0; p < NSOUND; p++) {
-            const ParamDef *d = sparam_def(p);
-            char v[20];
-            sparam_format(s, p, v, sizeof v);
-            float t = (float)(song.sp[s][p] - d->min) / (d->max - d->min);
-            int dimmed = song.gp[GP_MODE] == MODE_MONO && s > 0 && p == SP_NOTE;
-            param_row(x, y0 + p * rh, w, rh - 3, sel && p == cur_p, on && !dimmed, d->name, v, t, d->min < 0, col);
+static void draw_sound(void)
+{
+    string_heads(BODY_Y, SOUND_Y - BODY_Y - 3);
+    /* the resonance band: one copper roofline over body and sympathetic strings */
+    slant(0, BAND_Y - 2, SCREEN_W, BAND_Y - 4, 2, C_COPPER);
+    draw_cells();
+    /* the sympathetic strings' meters, small posts along the bottom row */
+    int n = song.fx[FX_SCOUNT];
+    for (int k = 0; k < n; k++) {
+        int h = (int)(fminf(1.f, engine_symp_meter(k) * 6.f) * 10.f);
+        gfx_fill(SCREEN_W - 10 - (n - k) * 5, BAND_Y + 36 + 30 - h, 3, h + 1, C_SEA);
+    }
+}
+
+static void draw_compose(void)
+{
+    /* the scale as a polygon: each degree at its true angle in the octave;
+     * the chord joined inside it, the sympathetic strings as dots */
+    int px = 6, pw = 252;
+    roof(px, BODY_Y, pw, FOOTER_Y - 6 - BODY_Y, 20, C_PANEL);
+    slant(px, BODY_Y, px + pw, BODY_Y + 20, 2, C_COPPER);
+    gfx_text(px + 10, BODY_Y + 22, engine_scale_name(song.gp[GP_SCALE]), C_DIM, FONT_SMALL);
+    int n = engine_scale_n();
+    float cx = px + pw / 2.f, cy = BODY_Y + 150, r = 74.f, vx[12], vy[12];
+    for (int i = 0; i < n; i++) {
+        float a = -1.5707963f + 6.2831853f * engine_scale_cents(i) / 1200.f;
+        vx[i] = cx + r * cosf(a);
+        vy[i] = cy + r * sinf(a);
+    }
+    for (int i = 0; i < n; i++)
+        line(vx[i], vy[i], vx[(i + 1) % n], vy[(i + 1) % n], 1.f, C_LINE);
+    int has[12] = {0}, order[12], no = 0;
+    for (int s = 0; s < NS; s++)
+        if (song.on[s]) {
+            int d = song.gp[GP_MODE] == MODE_MONO ? song.sp[0][SP_NOTE] : song.sp[s][SP_NOTE];
+            has[((d % n) + n) % n] |= 1 << s;
         }
+    for (int i = 0; i < n; i++)
+        if (has[i])
+            order[no++] = i;
+    uint32_t fill = gfx_mix(C_BG, C_COPPER, 0.35f + 0.3f * (live.master_meter > 0.5f));
+    for (int k = 1; k + 1 < no; k++)
+        gfx_tri(vx[order[0]], vy[order[0]], vx[order[k]], vy[order[k]], vx[order[k + 1]], vy[order[k + 1]], fill);
+    for (int k = 0; no >= 2 && k < no; k++)
+        line(vx[order[k]], vy[order[k]], vx[order[(k + 1) % no]], vy[order[(k + 1) % no]], 2.f, C_COPPER);
+    int sym[12] = {0};
+    for (int k = 0; k < song.fx[FX_SCOUNT]; k++) {
+        int d = engine_symp_degree(k);
+        sym[((d % n) + n) % n]++;
     }
-}
-
-static void draw_drone(void)
-{
-    /* the house: a long low roof over the five strings, chimney meter */
-    int lx = 8, lw = 300, ly = BODY_Y, lh = FOOTER_Y - 6 - BODY_Y;
-    roof(lx, ly, lw, lh, 54, C_PANEL);
-    gfx_fill(lx + lw - 30, ly + 24, 10, 36, C_PANEL2); /* chimney */
-    slant(lx, ly, lx + lw, ly + 54, 3, C_COPPER);
-    gfx_text(lx + 12, ly + 64, engine_scale_name(song.gp[GP_SCALE]), C_DIM, FONT_SMALL);
-    for (int s = 0; s < NS; s++) {
-        int y = ly + 116 + s * 60;
-        char nm[16];
-        int note = song.gp[GP_MODE] == MODE_MONO ? song.sp[0][SP_NOTE] : song.sp[s][SP_NOTE];
-        engine_degree_name(note, nm, sizeof nm);
-        gfx_text(lx + 14, y - 26, nm, song.on[s] ? scol[s] : C_DIM, FONT_SMALL);
-        draw_string(lx + 16, lx + lw - 50, y, song.on[s] ? live.meter[s] : 0.f, live.phase[s], scol[s], song.on[s]);
+    for (int i = 0; i < n; i++) {
+        diamond(vx[i], vy[i], has[i] ? 6.f : 3.f, has[i] ? C_TEXT : C_DIM);
+        /* the strings on a degree step inward, the sympathetic strings outward */
+        for (int s = 0, j = 0; s < NS; s++)
+            if (has[i] & (1 << s))
+                diamond(cx + (vx[i] - cx) * (0.84f - 0.12f * j), cy + (vy[i] - cy) * (0.84f - 0.12f * j), 4.f, scol[s]), j++;
+        for (int k = 0; k < sym[i]; k++)
+            gfx_disc(cx + (vx[i] - cx) * (1.12f + 0.07f * k), cy + (vy[i] - cy) * (1.12f + 0.07f * k), 2.f, C_SEA);
+        char nm[12];
+        engine_pc_name(i, nm, sizeof nm);
+        float lx = cx + (vx[i] - cx) * 1.5f, ly = cy + (vy[i] - cy) * 1.42f;
+        if (n <= 8 || has[i])
+            gfx_text((int)lx - gfx_text_w(nm, FONT_SMALL) / 2, (int)ly - 11, nm, has[i] ? C_SAND : C_DIM, FONT_SMALL);
     }
-    int mx = lx + lw - 24, mt = ly + 100, mhh = lh - 120, mh = (int)(mhh * fminf(1.f, live.master_meter));
-    gfx_fill(mx, mt, 8, mhh, C_PANEL2);
-    gfx_fill(mx, mt + mhh - mh, 8, mh, live.master_meter > 0.95f ? C_RED : C_SEA);
-
-    int x = 320, w = SCREEN_W - 8 - x, rh = (FOOTER_Y - 6 - BODY_Y) / NGP;
-    for (int p = 0; p < NGP; p++) {
-        const ParamDef *d = gparam_def(p);
-        char v[20];
-        gparam_format(p, v, sizeof v);
-        float t = (float)(song.gp[p] - d->min) / (d->max - d->min);
-        param_row(x, BODY_Y + p * rh, w, rh - 4, p == gcur, 1, d->name, v, t, 0, C_COPPER);
+    /* the chord now, and the ones before it fading down the roof */
+    const char *cn = engine_chord_name();
+    gfx_text((int)cx - gfx_text_w(cn, FONT_LARGE) / 2, BODY_Y + 254, cn[0] ? cn : "-", C_SAND, FONT_LARGE);
+    for (int i = 1; i < 5; i++) {
+        const char *h = engine_chord_history(i);
+        if (!h[0])
+            break;
+        int y = BODY_Y + 288 + (i - 1) * 22;
+        para(px + 16 + i * 6, y + 4, 10, 12, 3, gfx_mix(C_PANEL, C_COPPER, 0.9f - 0.15f * i));
+        gfx_text(px + 36 + i * 6, y, h, gfx_mix(C_PANEL, C_DIM, 1.f - 0.12f * i), FONT_SMALL);
     }
-}
-
-static void draw_mod(void)
-{
-    const int cw = SCREEN_W / NLFO, hh = 120, y0 = BODY_Y + hh + 6, rh = (FOOTER_Y - 6 - y0) / NLP;
+    static const int bars_of[6] = {0, 1, 2, 4, 8, 16};
+    int bars = bars_of[song.gp[GP_CHANGES]];
+    if (bars) {
+        int done = (int)((live.beat / 4) % (uint32_t)bars), bw = bars > 8 ? 9 : 16;
+        for (int i = 0; i < bars; i++)
+            para(px + 14 + i * (bw + 4), FOOTER_Y - 26, bw, 12, 3, i <= done ? C_COPPER : C_PANEL2);
+    }
+    /* the controls: harmony and time, the algorithm, then two LFOs */
     for (int l = 0; l < NLFO; l++) {
-        int x = l * cw + 8, w = cw - 16, sel = l == mcur_l;
-        uint32_t col = l ? C_SAND : C_COPPER;
-        roof(x, BODY_Y, w, hh, l ? -12 : 12, sel ? gfx_mix(C_PANEL2, col, 0.12f) : C_PANEL);
+        int x = COMP_X + l * COMP_CW;
         char t[12];
         snprintf(t, sizeof t, "LFO %d", l + 1);
-        gfx_text(x + 10, BODY_Y + 16, t, sel ? col : C_DIM, FONT_SMALL);
-        /* the shape over one cycle, and where we are in it */
-        int gx = x + 14, gw = w - 28, gy = BODY_Y + 44, gh = 60;
-        gfx_fill(gx, gy + gh, gw, 1, C_LINE);
-        int shape = song.lfo[l][LP_SHAPE];
-        float depth = song.lfo[l][LP_DEPTH] / 100.f;
-        for (int i = 0; i < gw; i++) {
-            float ph = (float)i / gw, v;
-            switch (shape) {
-            case SH_SINE: v = 0.5f - 0.5f * cosf(ph * 6.2831853f); break;
-            case SH_TRI: v = ph < 0.5f ? ph * 2.f : 2.f - ph * 2.f; break;
-            case SH_SAW: v = 1.f - ph; break;
-            case SH_SQUARE: v = ph < 0.5f ? 1.f : 0.f; break;
-            default: v = 0.3f + 0.4f * ((i * 7919 / (gw / 6 + 1)) % 5) / 4.f; break;
-            }
-            int h = (int)(v * gh * (0.15f + 0.85f * depth));
-            gfx_fill(gx + i, gy + gh - h, 1, h + 1, depth > 0.f ? gfx_mix(C_PANEL2, col, 0.6f) : C_LINE);
-        }
-        float cur = live.lfo_val[l];
-        int cx = gx + (int)(gw * fmodf(now_ms * 0.001f, 1.f));
-        (void)cx;
-        gfx_fill(gx + gw + 4, gy + gh - (int)(cur * gh), 6, (int)(cur * gh) + 1, col);
-        for (int p = 0; p < NLP; p++) {
-            const ParamDef *d = lparam_def(p);
-            char v[20];
-            lparam_format(l, p, v, sizeof v);
-            float t = (float)(song.lfo[l][p] - d->min) / (d->max - d->min);
-            param_row(x, y0 + p * rh, w, rh - 4, sel && p == mcur_p, 1, d->name, v, t, 0, col);
-        }
+        gfx_text(x + 4, LFO_Y - 22, t, l ? C_SAND : C_COPPER, FONT_SMALL);
+        int bw = COMP_CW - 70;
+        gfx_fill(x + 60, LFO_Y - 13, bw, 4, C_PANEL2);
+        gfx_fill(x + 60, LFO_Y - 13, (int)(bw * live.lfo_val[l]), 4, song.lfo[l][LP_DEPTH] ? (l ? C_SAND : C_COPPER) : C_LINE);
     }
+    draw_cells();
 }
 
-static void draw_fx(void)
+static void draw_mix(void)
 {
-    static const char *const names[4] = {"DELAY", "REVERB", "GATE", "BODY"};
-    const int cw = SCREEN_W / 4, hh = 110, y0 = BODY_Y + hh + 6, rh = (FOOTER_Y - 6 - y0) / 3;
-    for (int c = 0; c < 4; c++) {
-        int x = c * cw + 5, w = cw - 10, sel = c == fcur_c;
-        uint32_t col = c == 0 ? C_COPPER : c == 1 ? C_SAND : c == 2 ? C_SEA : C_CEDAR + 0x202020;
-        roof(x, BODY_Y + c * 8, w, hh - c * 8, 8, sel ? gfx_mix(C_PANEL2, col, 0.12f) : C_PANEL);
-        gfx_text(x + 10, BODY_Y + c * 8 + 14, names[c], sel ? col : C_DIM, FONT_SMALL);
-        int gx = x + 14, gy = BODY_Y + 48, gw = w - 28, gh = 50;
-        if (c == 0) {
-            /* echoes dying away */
+    const int cw = SCREEN_W / NS;
+    int cs = cell_string();
+    for (int s = 0; s < NS; s++) {
+        int x = s * cw + 3, w = cw - 6, on = song.on[s];
+        uint32_t col = scol[s];
+        chamfer(x, BODY_Y, w, 38, 8, s == cs ? gfx_mix(C_PANEL2, col, 0.14f) : C_PANEL);
+        char nm[8];
+        snprintf(nm, sizeof nm, "%d", s + 1);
+        gfx_text(x + 8, BODY_Y, nm, on ? col : C_DIM, FONT_SMALL);
+        if (!on)
+            gfx_fill(x + 24, BODY_Y + 9, 18, 4, C_RED);
+        /* the meter, placed where the string sits in the stereo field */
+        int mw = w - 16, mx = x + 8, my = BODY_Y + 26;
+        gfx_fill(mx, my, mw, 5, C_PANEL2);
+        int lv = (int)(mw * fminf(1.f, sqrtf(live.meter[s] * 4.f)) * (on ? 1 : 0));
+        gfx_fill(mx, my, lv, 5, col);
+        int pp = mx + mw / 2 + song.sp[s][SP_PAN] * mw / 100;
+        gfx_fill(pp - 1, my - 4, 3, 13, C_TEXT);
+    }
+    int mm = (int)(628 * fminf(1.f, live.master_meter));
+    gfx_fill(6, BODY_Y + 146, 628, 3, C_PANEL2);
+    gfx_fill(6, BODY_Y + 146, mm, 3, live.master_meter > 0.95f ? C_RED : C_SEA);
+
+    static const char *const names[3] = {"DELAY", "REVERB", "GATE"};
+    for (int c = 0; c < 3; c++) {
+        int x = c * 213 + 4, w = 205;
+        uint32_t col = c == 0 ? C_COPPER : c == 1 ? C_SAND : C_SEA;
+        roof(x, MIX_FX_Y + c * 6, w, MIX_FXC_Y - 4 - MIX_FX_Y - c * 6, 6, C_PANEL);
+        gfx_text(x + 10, MIX_FX_Y + c * 6 + 6, names[c], col, FONT_SMALL);
+        int gx = x + 14, gy = MIX_FX_Y + 36, gw = w - 28, gh = 48;
+        if (c == 0) { /* echoes dying away */
             float fb = song.fx[FX_DFB] / 100.f, a = 1.f;
             for (int i = 0; i < 6; i++) {
                 int h = (int)(gh * a * (0.3f + 0.7f * song.fx[FX_DMIX] / 100.f));
@@ -602,47 +769,22 @@ static void draw_fx(void)
                 a *= 0.35f + 0.6f * fb;
             }
         }
-        else if (c == 1) {
-            /* a wedge of decay */
+        else if (c == 1) { /* a wedge of decay */
             int len = (int)(gw * (0.3f + 0.7f * song.fx[FX_VTIME] / 100.f));
             gfx_tri(gx, gy, gx + len, gy + gh, gx, gy + gh, gfx_mix(C_PANEL2, col, 0.3f + 0.6f * song.fx[FX_VSEND] / 100.f));
         }
-        else if (c == 3) {
-            /* five posts on a bridge: the strings, joined as strongly as they couple */
-            float cp = song.fx[FX_SYMP] / 100.f, bd = song.fx[FX_BODY] / 100.f;
-            int px[NS];
-            for (int s = 0; s < NS; s++) {
-                px[s] = gx + 4 + s * (gw - 8) / (NS - 1);
-                int h = 8 + (int)(live.meter[s] * 30.f);
-                gfx_fill(px[s] - 2, gy + gh - 12 - h, 5, h, song.on[s] ? scol[s] : C_OFF);
-            }
-            if (cp > 0.f)
-                for (int s = 0; s + 1 < NS; s++)
-                    slant(px[s], gy + gh - 12, px[s + 1], gy + gh - 12, 1 + (int)(cp * 4.f), gfx_mix(C_PANEL2, col, 0.4f + 0.6f * cp));
-            /* the body under them, deeper with more BODY */
-            roof(gx, gy + gh - 8, gw, 8 + (int)(bd * 10.f), 4, gfx_mix(C_PANEL2, col, 0.25f + 0.6f * bd));
-        }
-        else {
-            /* the gate pattern over a beat, live gain on the right */
+        else { /* the gate over a beat, live gain on the right */
             int on = song.fx[FX_GRATE] > 0, duty = song.fx[FX_GDUTY];
-            int slots = 4;
-            for (int i = 0; i < slots; i++) {
-                int sw = gw / slots, ow = sw * duty / 10;
+            for (int i = 0; i < 4; i++) {
+                int sw = gw / 4, ow = sw * duty / 10;
                 gfx_fill(gx + i * sw, gy + 10, sw - 4, gh - 10, C_PANEL2);
                 gfx_fill(gx + i * sw, gy + 10, on ? ow : sw - 4, gh - 10, on ? gfx_mix(C_PANEL2, col, 0.7f) : C_LINE);
             }
             int lh = (int)((gh - 10) * live.gate);
             gfx_fill(gx + gw + 2, gy + gh - lh, 6, lh + 1, col);
         }
-        for (int p = 0; p < 3; p++) {
-            int idx = c * 3 + p;
-            const ParamDef *d = fparam_def(idx);
-            char v[20];
-            fparam_format(idx, v, sizeof v);
-            float t = (float)(song.fx[idx] - d->min) / (d->max - d->min);
-            param_row(x, y0 + p * rh, w, rh - 4, sel && p == fcur_p, 1, d->name, v, t, 0, col);
-        }
     }
+    draw_cells();
 }
 
 /* a Euclidean ring as geometry: the steps are the corners of a polygon, the
@@ -784,10 +926,9 @@ void ui_draw(uint32_t *fb)
     draw_header();
     switch (page) {
     case PAGE_PLAY: draw_play(); break;
-    case PAGE_STRINGS: draw_strings(); break;
-    case PAGE_DRONE: draw_drone(); break;
-    case PAGE_MOD: draw_mod(); break;
-    default: draw_fx(); break;
+    case PAGE_SOUND: draw_sound(); break;
+    case PAGE_COMPOSE: draw_compose(); break;
+    default: draw_mix(); break;
     }
     draw_footer();
     draw_toast();

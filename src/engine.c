@@ -5,7 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define SONG_MAGIC 0x4a445206u    /* JDR6: scales, Euclidean rhythms, BUZZ, coupling, body */
+#define SONG_MAGIC 0x4a445207u    /* JDR7: sympathetic strings, pan, MOTION/HOME/COLOR/EVOLVE */
+#define SONG_MAGIC_V6 0x4a445206u /* JDR6: scales, Euclidean rhythms, BUZZ, coupling, body (v0.1) */
 #define SONG_MAGIC_V5 0x4a445205u /* JDR5: GLIDE global (v0.0.3) */
 #define SONG_MAGIC_V4 0x4a445204u /* JDR4: five strings (v0.0.2) */
 #define SONG_MAGIC_V3 0x4a445203u /* JDR3: four strings (v0.0.1) */
@@ -38,6 +39,17 @@ typedef struct {
     int lfo[NLFO][NLP];
     int fx[NFX_V5];
 } SongV5;
+#define NSP_V6 19
+#define NGP_V6 10
+#define NFX_V6 12
+typedef struct {
+    uint32_t magic;
+    int on[NS];
+    int sp[NS][NSP_V6];
+    int gp[NGP_V6];
+    int lfo[NLFO][NLP];
+    int fx[NFX_V6];
+} SongV6;
 
 Song song;
 Live live;
@@ -93,16 +105,20 @@ static const ParamDef sparams[NSP] = {
     {"NOTE", -24, 24},  {"FINE", -50, 50}, {"LEVEL", 0, 100}, {"BOW", 0, 100},  {"DECAY", 0, 100},
     {"BRIGHT", 0, 100}, {"FOLD", 0, 100},  {"STIFF", 0, 100}, {"POS", 0, 100},  {"BUZZ", 0, 100},
     {"PLUCK", 0, 1},    {"P STEPS", 1, 16}, {"P PULSES", 1, 16}, {"P ROTATE", 0, 15},
-    {"BOW RING", 0, 1}, {"B STEPS", 1, 16}, {"B PULSES", 1, 16}, {"B ROTATE", 0, 15}, {"RATE", 0, 5}};
+    {"BOW RING", 0, 1}, {"B STEPS", 1, 16}, {"B PULSES", 1, 16}, {"B ROTATE", 0, 15}, {"RATE", 0, 5},
+    {"PAN", -50, 50}};
 static const ParamDef gparams[NGP] = {{"VOICING", 0, 1},   {"SCALE", 0, NSCALE - 1}, {"ROOT", 24, 72},
                                       {"CHANGES", 0, 5},   {"BPM", 40, 200},         {"DRIFT", 0, 100},
                                       {"GLIDE", 0, 7},     {"CUTOFF", 0, 100},       {"MASTER", 0, 100},
-                                      {"WIFI SYNC", 0, NSYNCMODE - 1}};
+                                      {"WIFI SYNC", 0, NSYNCMODE - 1}, {"MOTION", 0, 100},
+                                      {"HOME", 0, 100},    {"COLOR", 0, 100},        {"EVOLVE", 0, 100}};
 static const ParamDef lparams[NLP] = {{"RATE", 0, 6}, {"SHAPE", 0, NSH - 1}, {"TARGET", 0, NLT - 1}, {"DEPTH", 0, 100}};
 static const ParamDef fparams[NFX] = {{"TIME", 0, 7},   {"FEEDBK", 0, 95}, {"MIX", 0, 100},
                                       {"SEND", 0, 100}, {"TIME", 0, 100},  {"TONE", 0, 100},
                                       {"RATE", 0, 7},   {"DUTY", 1, 9},    {"SMOOTH", 0, 100},
-                                      {"COUPLE", 0, 100}, {"BODY", 0, 100}, {"TYPE", 0, NBODY - 1}};
+                                      {"COUPLE", 0, 100}, {"BODY", 0, 100}, {"TYPE", 0, NBODY - 1},
+                                      {"SYMP", 0, NSYMP}, {"S TUNE", 0, NSTUNE - 1}, {"S OCT", -1, 2},
+                                      {"S LEVEL", 0, 100}, {"S RING", 0, 100}};
 static const float gate_div16[8] = {0.f, 8.f, 4.f, 2.f, 1.f, 0.5f, 1.3333f, 0.6667f};
 static const char *const gate_names[8] = {"OFF", "1/2", "1/4", "1/8", "1/16", "1/32", "1/8T", "1/16T"};
 /* rhythm step lengths in 16ths */
@@ -111,6 +127,7 @@ static const char *const rate_names[6] = {"1/16", "1/8", "1/4", "1/2", "1 BAR", 
 static const int change_bars[6] = {0, 1, 2, 4, 8, 16};
 static const char *const change_names[6] = {"OFF", "1 BAR", "2 BARS", "4 BARS", "8 BARS", "16 BARS"};
 static const char *const body_names[NBODY] = {"WOOD", "GOURD", "BRONZE", "HARMONIC"};
+static const char *const stune_names[NSTUNE] = {"SCALE", "CHORD", "CHORD+", "DRONE", "FIFTHS"};
 static const char *const note_names[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
 static const char *const sync_names[NSYNCMODE] = {"OFF", "AUTO", "LEAD", "FOLLOW"};
 static const float lfo_div16[7] = {64.f, 32.f, 16.f, 8.f, 4.f, 2.f, 1.f};
@@ -123,18 +140,18 @@ static const char *const dly_names[8] = {"1/16", "1/8", "3/16", "1/4", "3/8", "1
 static const float glide_div16[8] = {0.f, 0.5f, 1.f, 2.f, 4.f, 8.f, 16.f, 32.f};
 static const char *const glide_names[8] = {"OFF", "1/32", "1/16", "1/8", "1/4", "1/2", "1 BAR", "2 BARS"};
 /* {note, fine, level, bow, decay, bright, fold, stiff, pos, buzz,
- *  pluck on, steps, pulses, rotate, bow ring on, steps, pulses, rotate, rate}
+ *  pluck on, steps, pulses, rotate, bow ring on, steps, pulses, rotate, rate, pan}
  * Notes are JUST MAJOR degrees: root, fifth, octave, twelfth, two octaves.
  * Each string has its own sparse pluck rhythm; the top string's bow ring
  * breathes in and out, the other bows play continuously. */
-static const int def_sp[NS][NSP] = {{0, 0, 80, 35, 85, 45, 0, 0, 0, 0, 1, 4, 1, 0, 0, 4, 2, 0, 2},
-                                    {4, -4, 65, 45, 92, 40, 0, 0, 0, 0, 1, 5, 2, 0, 0, 5, 3, 0, 2},
-                                    {7, 3, 55, 40, 95, 55, 0, 0, 0, 0, 1, 3, 1, 1, 0, 3, 2, 0, 3},
-                                    {11, 0, 40, 50, 90, 65, 0, 0, 0, 0, 1, 7, 2, 3, 0, 7, 3, 0, 2},
-                                    {14, 2, 30, 55, 93, 70, 0, 0, 0, 0, 1, 6, 1, 2, 1, 5, 3, 0, 2}};
-static const int def_gp[NGP] = {MODE_CHORD, 1, 45, 4, 72, 30, 3, 70, 80, SYNC_OFF};
+static const int def_sp[NS][NSP] = {{0, 0, 80, 35, 85, 45, 0, 0, 0, 0, 1, 4, 1, 0, 0, 4, 2, 0, 2, 0},
+                                    {4, -4, 65, 45, 92, 40, 0, 0, 0, 0, 1, 5, 2, 0, 0, 5, 3, 0, 2, -22},
+                                    {7, 3, 55, 40, 95, 55, 0, 0, 0, 0, 1, 3, 1, 1, 0, 3, 2, 0, 3, 22},
+                                    {11, 0, 40, 50, 90, 65, 0, 0, 0, 0, 1, 7, 2, 3, 0, 7, 3, 0, 2, -12},
+                                    {14, 2, 30, 55, 93, 70, 0, 0, 0, 0, 1, 6, 1, 2, 1, 5, 3, 0, 2, 12}};
+static const int def_gp[NGP] = {MODE_CHORD, 1, 45, 4, 72, 30, 3, 70, 80, SYNC_OFF, 50, 50, 45, 30};
 static const int def_lfo[NLFO][NLP] = {{2, SH_SINE, LT_CUTOFF, 35}, {4, SH_TRI, LT_LEVEL, 0}};
-static const int def_fx[NFX] = {5, 45, 25, 35, 60, 55, 0, 5, 40, 30, 35, BODY_WOOD};
+static const int def_fx[NFX] = {5, 45, 25, 35, 60, 55, 0, 5, 40, 30, 35, BODY_WOOD, 7, STUNE_CHORD, 1, 45, 70};
 
 const ParamDef *sparam_def(int p) { return &sparams[p]; }
 const ParamDef *gparam_def(int p) { return &gparams[p]; }
@@ -193,6 +210,12 @@ void sparam_format(int s, int p, char *b, int n)
     }
     case SP_FINE: snprintf(b, n, "%+dc", x); return;
     case SP_RATE: snprintf(b, n, "%s", rate_names[x]); return;
+    case SP_PAN:
+        if (x == 0)
+            snprintf(b, n, "C");
+        else
+            snprintf(b, n, "%c%d", x < 0 ? 'L' : 'R', abs(x));
+        return;
     case SP_PON:
     case SP_BON: snprintf(b, n, "%s", x ? "ON" : "OFF"); return;
     case SP_FOLD:
@@ -244,6 +267,12 @@ void fparam_format(int p, char *b, int n)
         snprintf(b, n, "%d%%", x * 10);
     else if (p == FX_BTYPE)
         snprintf(b, n, "%s", body_names[x]);
+    else if (p == FX_STUNE)
+        snprintf(b, n, "%s", stune_names[x]);
+    else if (p == FX_SOCT)
+        snprintf(b, n, "%+d", x);
+    else if (p == FX_SCOUNT && x == 0)
+        snprintf(b, n, "OFF");
     else if (p == FX_DFB || p == FX_DMIX || p == FX_VSEND)
         snprintf(b, n, "%d%%", x);
     else if ((p == FX_SYMP || p == FX_BODY) && x == 0)
@@ -309,6 +338,18 @@ static float bridge, bridge_x1, bridge_hp;
 /* body: five resonant modes per channel */
 #define NMODE 5
 static float body_ic[2][NMODE][2];
+/* sympathetic strings: plain loops, never plucked or bowed, fed only by
+ * the bridge; they ring when the played strings hit their pitches */
+#define SB 2048
+typedef struct {
+    float buf[SB];
+    int w, set;
+    float lp, D, D_cur, midi, peak;
+} Symp;
+static Symp sy[NSYMP];
+static int symp_deg[NSYMP];
+static float symp_fine[NSYMP]; /* cents: doubled strings shimmer against each other */
+static float symp_pk[NSYMP];
 static float bpm_f = 72.f;
 static float master_g, play_g;
 /* output leveller: up to LEV_MAX of makeup gain, backing off so peaks sit
@@ -451,7 +492,10 @@ void engine_euclid_random(int s, int ring)
 
 static int ch_root, ch_prev = -1, ch_away, ch_kind; /* ST_CHORD state */
 static char chord_nm[48] = "";
+#define NHIST 6
+static char chord_hist[NHIST][48];
 const char *engine_chord_name(void) { return chord_nm; }
+const char *engine_chord_history(int i) { return i == 0 ? chord_nm : i < NHIST ? chord_hist[i] : ""; }
 static void name_standing(void);
 
 /* each string keeps to its own register (cents from the root) */
@@ -547,10 +591,21 @@ static void next_chord_harmony(const Scale *sc)
     int m = sc->nh ? sc->nh : sc->n;
     /* root motion: by fourth and fifth most, then by third and step; the
      * longer it has been away from home, the likelier it returns */
-    static const int off7[7] = {3, 4, 1, -1, 2, -2, 5}, w7[7] = {3, 3, 1, 2, 2, 2, 1};
-    static const int off5[4] = {1, -1, 2, -2}, w5[4] = {1, 1, 1, 1};
+    /* MOTION: calm, common-tone moves (low) .. bold ones (high); HOME
+     * scales the pull back to the tonic */
+    float mo = song.gp[GP_MOTION] / 100.f, home = song.gp[GP_HOME] / 50.f;
+    static const int off7[7] = {3, 4, 1, -1, 2, -2, 5}, off5[4] = {1, -1, 2, -2};
+    int w7[7], w5[4];
+    for (int i = 0; i < 7; i++) {
+        /* fourths and fifths always; thirds (two common tones) when calm;
+         * steps and the far move when bold */
+        float w = i < 2 ? 3.f : i < 4 ? 0.5f + 3.f * mo : i < 6 ? 3.5f - 2.f * mo : 2.f * mo;
+        w7[i] = 1 + (int)(w * 4.f);
+    }
+    for (int i = 0; i < 4; i++)
+        w5[i] = 1 + (int)(4.f * (i < 2 ? 1.6f - mo : 0.4f + mo));
     int next = ch_root;
-    if (ch_root != 0 && ch_away >= 2 && frand() < 0.15f * ch_away)
+    if (ch_root != 0 && ch_away >= 2 && frand() < 0.15f * ch_away * home)
         next = 0;
     else
         for (int tries = 0; tries < 8 && (next == ch_root || next == ch_prev); tries++)
@@ -560,7 +615,8 @@ static void next_chord_harmony(const Scale *sc)
     ch_root = next;
     ch_away = ch_root ? ch_away + 1 : 0;
     float r = frand();
-    ch_kind = m < 6 ? 0 : r < 0.15f ? 2 : r < 0.5f ? 1 : 0; /* triad, seventh, sus */
+    float co = song.gp[GP_COLOR] / 100.f; /* COLOR 45: about 1 in 7 sus, 1 in 3 sevenths */
+    ch_kind = m < 6 ? 0 : r < 0.33f * co ? 2 : r < 1.1f * co ? 1 : 0; /* triad, seventh, sus */
 
     int tones[4], nt = 3;
     tones[0] = harm_pc(sc, ch_root);
@@ -633,12 +689,20 @@ static void next_chord_raga(const Scale *sc)
     song.sp[0][SP_FINE] = song.sp[1][SP_FINE] = 0;
     /* the upper strings wander a step or two; at least one moves, and no two
      * land on the same degree */
-    static const int steps[6] = {-2, -1, 0, 0, 1, 2};
+    /* MOTION: how far a voice may step (1 .. 3 degrees); HOME: the chance a
+     * moving voice settles on Sa or the tanpura's second note instead */
+    int reach = 1 + (int)(song.gp[GP_MOTION] / 40.f);
+    float home = song.gp[GP_HOME] / 100.f * 0.4f;
     int moved = 0;
     for (int s = 2; s < NS; s++) {
         int cur = song.sp[s][SP_NOTE], d = cur;
         for (int tries = 0; tries < 12; tries++) {
-            d = clamp_deg(cur + steps[xr() % 6]);
+            int st = (int)(xr() % (unsigned)(2 * reach + 1)) - reach;
+            d = clamp_deg(cur + st);
+            if (frand() < home) {
+                int o = fdiv(cur, sc->n), pc = frand() < 0.5f ? 0 : second;
+                d = clamp_deg(o * sc->n + pc + (abs(o * sc->n + pc - cur) > abs(o * sc->n + pc + sc->n - cur) ? sc->n : 0));
+            }
             if (s == NS - 1 && !moved && d == cur)
                 continue;
             if (fabsf(deg_cents(sc, d) - reg_center[s]) > REG_HALF)
@@ -668,16 +732,22 @@ static void next_chord_gamelan(const Scale *sc)
     /* the block moves in parallel; kempyung is three keys up in five tones */
     static const int mv[5] = {1, -1, 2, -2, 3};
     int r = fmod_i(song.sp[1][SP_NOTE], sc->n), k = sc->n == 5 ? 3 : 4, nr = r;
+    int span = 2 + (int)(song.gp[GP_MOTION] / 34.f); /* MOTION: steps only .. leaps */
+    if (span > 5)
+        span = 5;
+    if (r != 0 && frand() < song.gp[GP_HOME] / 100.f * 0.35f)
+        nr = 0; /* HOME: back to the first tone */
     while (nr == r)
-        nr = fmod_i(r + mv[xr() % 5], sc->n);
+        nr = fmod_i(r + mv[xr() % (unsigned)span], sc->n);
+    int om = 2 + song.gp[GP_COLOR] / 12; /* COLOR: how widely the pair beats */
     song.sp[0][SP_NOTE] = nr - sc->n; /* gong */
     song.sp[1][SP_NOTE] = nr;
     song.sp[2][SP_NOTE] = nr + k;
     song.sp[3][SP_NOTE] = nr; /* the pair, tuned apart so they beat (ombak) */
     song.sp[4][SP_NOTE] = nr + k + sc->n;
     song.sp[0][SP_FINE] = 0;
-    song.sp[1][SP_FINE] = -4;
-    song.sp[3][SP_FINE] = 4;
+    song.sp[1][SP_FINE] = -om;
+    song.sp[3][SP_FINE] = om;
     song.sp[2][SP_FINE] = -2;
     song.sp[4][SP_FINE] = 2;
     char t[12];
@@ -694,6 +764,7 @@ static void name_standing(void)
     const Scale *sc = cur_scale();
     char t[12];
     chord_nm[0] = 0;
+    memset(chord_hist, 0, sizeof chord_hist);
     if (sc->style == ST_CHORD) {
         if ((sc->nh ? sc->nh : sc->n) == 7)
             snprintf(t, sizeof t, "%s", sc->n == 12 ? "i" : "I");
@@ -713,16 +784,132 @@ static void name_standing(void)
 
 /* the next chord. The strings are not plucked: they keep ringing and slide
  * (or jump) to the new notes, see GLIDE. */
+/* EVOLVE: a chord change may also nudge one string's rhythm: rotate a ring,
+ * add or take away a pulse or a step, or (rarely) start or stop a bow ring */
+static void evolve(void)
+{
+    float ev = song.gp[GP_EVOLVE] / 100.f;
+    if (frand() >= ev)
+        return;
+    int s = (int)(xr() % NS), r = (int)(xr() % NRING);
+    int *P = song.sp[s];
+    if (!P[RING_P(r, 0)] && r == RING_BOW && frand() < 0.3f * ev) {
+        P[SP_BON] = 1;
+        return;
+    }
+    if (!P[RING_P(r, 0)])
+        r = RING_PLUCK;
+    int steps = P[RING_P(r, 1)], dir = frand() < 0.5f ? -1 : 1;
+    float k = frand();
+    if (k < 0.5f)
+        P[RING_P(r, 3)] = fmod_i(P[RING_P(r, 3)] + dir, steps);
+    else if (k < 0.85f)
+        P[RING_P(r, 2)] = P[RING_P(r, 2)] + dir < 1 ? 1 : P[RING_P(r, 2)] + dir > steps ? steps : P[RING_P(r, 2)] + dir;
+    else {
+        int ns = steps + dir < 2 ? 2 : steps + dir > 8 ? 8 : steps + dir;
+        P[RING_P(r, 1)] = ns;
+        if (P[RING_P(r, 2)] > ns)
+            P[RING_P(r, 2)] = ns;
+        P[RING_P(r, 3)] %= ns;
+    }
+    if (r == RING_BOW && P[SP_BON] && frand() < 0.15f * ev)
+        P[SP_BON] = 0; /* the bow holds again */
+}
+
 void engine_next_chord(void)
 {
     const Scale *sc = cur_scale();
+    char prev[48];
+    memcpy(prev, chord_nm, sizeof prev);
     switch (sc->style) {
     case ST_RAGA: next_chord_raga(sc); break;
     case ST_GAMELAN: next_chord_gamelan(sc); break;
     default: next_chord_harmony(sc); break;
     }
+    for (int i = NHIST - 1; i > 1; i--)
+        memcpy(chord_hist[i], chord_hist[i - 1], sizeof chord_hist[i]);
+    memcpy(chord_hist[1], prev, sizeof prev);
+    evolve();
     live.chords++;
 }
+
+/* where the sympathetic strings sit, as degrees from the root, rising */
+static void symp_tune(const Scale *sc, int count)
+{
+    int base = song.fx[FX_SOCT] * sc->n, m = sc->nh ? sc->nh : sc->n;
+    int mono = song.gp[GP_MODE] == MODE_MONO;
+    /* the chord as it sounds: the strings' degree classes, bass first */
+    int pcs[NS * 2], np = 0;
+    for (int s = 0; s < NS; s++) {
+        if (!song.on[s])
+            continue;
+        int pc = fmod_i(mono ? song.sp[0][SP_NOTE] : song.sp[s][SP_NOTE], sc->n), k;
+        for (k = 0; k < np && pcs[k] != pc; k++)
+            ;
+        if (k == np)
+            pcs[np++] = pc;
+    }
+    if (!np)
+        pcs[np++] = 0;
+    int chord = np;
+    if (song.fx[FX_STUNE] == STUNE_CHORD9) /* add the scale tone above each chord tone */
+        for (int k = 0; k < chord; k++) {
+            int up = fmod_i(pcs[k] + (sc->n == 12 ? 2 : 1), sc->n), j;
+            for (j = 0; j < np && pcs[j] != up; j++)
+                ;
+            if (j == np)
+                pcs[np++] = up;
+        }
+    /* sort the classes upward from the bass */
+    int b0 = pcs[0];
+    for (int i = 1; i < np; i++)
+        for (int j = i; j > 0 && fmod_i(pcs[j] - b0, sc->n) < fmod_i(pcs[j - 1] - b0, sc->n); j--) {
+            int t = pcs[j];
+            pcs[j] = pcs[j - 1];
+            pcs[j - 1] = t;
+        }
+    int fifth = 0;
+    for (int i = 0; i < sc->n; i++)
+        if (fabsf(sc->cents[i] - 701.96f) < fabsf(sc->cents[fifth] - 701.96f))
+            fifth = i;
+    /* each tuning repeats within two octaves; a second pass over the same
+     * pitches is detuned a few cents, as on a sitar's taraf */
+    for (int k = 0; k < count; k++) {
+        int d, per, layer;
+        switch (song.fx[FX_STUNE]) {
+        case STUNE_SCALE: per = m; break;
+        case STUNE_DRONE: per = 2; break;
+        case STUNE_FIFTHS: per = 7; break;
+        default: per = np; break;
+        }
+        layer = k / per;
+        symp_fine[k] = layer >= 2 ? ((layer & 1) ? 5.f : -5.f) * (layer / 2) : 0.f;
+        int o = layer % 2, i = k % per;
+        switch (song.fx[FX_STUNE]) {
+        case STUNE_SCALE: d = base + o * sc->n + harm_pc(sc, i); break;
+        case STUNE_DRONE: d = base + o * sc->n + (i ? fifth : 0); break;
+        case STUNE_FIFTHS: {
+            float c = fmodf(701.96f * i, 1200.f) + 1200.f * o;
+            d = base + nearest_degree(sc, c);
+            break;
+        }
+        default: { /* CHORD, CHORD+: the chord's classes, rising */
+            int pc = pcs[i];
+            d = base + o * sc->n + fmod_i(pc - b0, sc->n) + b0;
+            if (b0 >= sc->n / 2)
+                d -= sc->n;
+            break;
+        }
+        }
+        symp_deg[k] = clamp_deg(d);
+    }
+}
+
+int engine_symp_degree(int k) { return k >= 0 && k < NSYMP ? symp_deg[k] : 0; }
+float engine_symp_meter(int k) { return k >= 0 && k < NSYMP ? symp_pk[k] : 0.f; }
+int engine_scale_n(void) { return cur_scale()->n; }
+float engine_scale_cents(int i) { return cur_scale()->cents[i]; }
+void engine_pc_name(int pc, char *b, int n) { deg_name_noct(cur_scale(), pc, b, n); }
 
 static void reverb_tick(float in, float *outL, float *outR, float decay, float tone)
 {
@@ -847,6 +1034,13 @@ void engine_render(int16_t *out, int frames)
     float buzz_th[NS], buzz_k[NS], bow_k[NS], pk_col[NS], pk_gain[NS];
     const Scale *sc = cur_scale();
     float hand_k = 1.f - expf(-1.f / (0.15f * sr));
+    /* sympathetic strings: tune them, and set their loop */
+    int nsy = song.fx[FX_SCOUNT];
+    float sy_rho = 0.97f + 0.0295f * sqrtf(song.fx[FX_SRING] / 100.f);
+    float sy_gain = nsy ? song.fx[FX_SLEVEL] / 100.f * 2.5f / sqrtf((float)nsy) : 0.f;
+    float sy_drive = 0.02f;
+    if (nsy)
+        symp_tune(sc, nsy);
     for (int s = 0; s < NS; s++) {
         const int *P = song.sp[s];
         String *st = &str[s];
@@ -926,6 +1120,22 @@ void engine_render(int16_t *out, int frames)
                 st->D_cur = st->D;
             float l = song.sp[s][SP_LEVEL] / 100.f;
             st->lvl = l * l * m_lvl;
+        }
+        float sy_dD[NSYMP];
+        for (int k = 0; k < nsy; k++) {
+            Symp *q = &sy[k];
+            float target = song.gp[GP_ROOT] + (deg_cents(sc, symp_deg[k]) + symp_fine[k]) / 100.f;
+            if (!q->set) {
+                q->midi = target;
+                q->set = 1;
+            }
+            else
+                q->midi += (target - q->midi) * (1.f - expf(-4.f * nn / glide_samps));
+            float hz = fmaxf(30.f, fminf(midi_hz(q->midi), sr / 8.f));
+            q->D = fmaxf(2.f, fminf(sr / hz - 1.f, SB - 3.f)); /* the lowpass adds about a sample */
+            if (q->D_cur <= 0.f)
+                q->D_cur = q->D;
+            sy_dD[k] = (q->D - q->D_cur) / nn;
         }
         float dD[NS], dl[NS];
         for (int s = 0; s < NS; s++) {
@@ -1026,9 +1236,9 @@ void engine_render(int16_t *out, int frames)
                 st->w = st->w + 1 < DL_MAX ? st->w + 1 : 0;
 
                 o *= st->lvl_cur * st->gain * play_g;
-                float pan = (s - (NS - 1) * 0.5f) * 0.25f;
-                L += o * (1.f - pan * 0.5f);
-                R += o * (1.f + pan * 0.5f);
+                float pan = song.sp[s][SP_PAN] / 50.f;
+                L += o * (1.f - pan);
+                R += o * (1.f + pan);
                 send += o;
                 float a = fabsf(y);
                 if (a > meter[s])
@@ -1039,6 +1249,33 @@ void engine_render(int16_t *out, int frames)
             bridge_hp = br - bridge_x1 + 0.995f * bridge_hp;
             bridge_x1 = br;
             bridge = bridge_hp;
+
+            /* the sympathetic strings hear the bridge, spread across the
+             * stereo field, and go to the reverb a little more */
+            if (nsy) {
+                float sl = 0.f, sr_ = 0.f;
+                for (int k = 0; k < nsy; k++) {
+                    Symp *q = &sy[k];
+                    q->D_cur += sy_dD[k];
+                    float rp = q->w - q->D_cur;
+                    if (rp < 0.f)
+                        rp += SB;
+                    int ri = (int)rp, rj = ri + 1 < SB ? ri + 1 : 0;
+                    float y = q->buf[ri] + (q->buf[rj] - q->buf[ri]) * (rp - ri);
+                    q->lp += (y - q->lp) * 0.5f;
+                    q->buf[q->w] = softclip(q->lp * sy_rho + bridge * sy_drive);
+                    q->w = q->w + 1 < SB ? q->w + 1 : 0;
+                    float pan = (k & 1 ? 1.f : -1.f) * (0.25f + 0.6f * (float)k / NSYMP);
+                    sl += y * (1.f - pan);
+                    sr_ += y * (1.f + pan);
+                    float a = fabsf(y);
+                    if (a > q->peak)
+                        q->peak = a;
+                }
+                L += sl * sy_gain * play_g;
+                R += sr_ * sy_gain * play_g;
+                send += (sl + sr_) * 0.8f * sy_gain * play_g;
+            }
 
             /* the body resonates under the strings */
             if (body_amt > 0.f)
@@ -1142,6 +1379,18 @@ void engine_render(int16_t *out, int frames)
         live.meter[s] = meter[s];
         live.phase[s] = str[s].vis_ph;
         live.bow_env[s] = str[s].bow_env;
+    }
+    {
+        float sm = 0.f;
+        for (int k = 0; k < NSYMP; k++) {
+            symp_pk[k] = k < nsy ? sy[k].peak : 0.f;
+            sy[k].peak *= 0.5f;
+            if (symp_pk[k] > sm)
+                sm = symp_pk[k];
+        }
+        live.symp_meter = sm;
+    }
+    for (int s = 0; s < NS; s++) {
         for (int r = 0; r < NRING; r++)
             live.flash[s][r] = flash[s][r] *= fl;
     }
@@ -1165,6 +1414,7 @@ void engine_init(int sample_rate)
     lev_g = 1.f;
     memset(la_buf, 0, sizeof la_buf);
     memset(body_ic, 0, sizeof body_ic);
+    memset(sy, 0, sizeof sy);
 }
 
 /* ------------------------------------------------------------ song state */
@@ -1195,6 +1445,29 @@ void song_default(void)
  * semitones, PLUCK every N beats. The pluck becomes a one-pulse ring with
  * the same period and phase; the bow rings stay off, and COUPLE, BODY and
  * CHANGES stay off so the song sounds as it did. */
+/* what is new since v0.1 stays out of an older song, so it sounds as it
+ * did: no sympathetic strings, no EVOLVE, and the old gentle pan */
+static void legacy_quiet(Song *s)
+{
+    static const int pan[NS] = {-12, -6, 0, 6, 12};
+    for (int i = 0; i < NS; i++)
+        s->sp[i][SP_PAN] = pan[i];
+    s->gp[GP_MOTION] = 50, s->gp[GP_HOME] = 50, s->gp[GP_COLOR] = 45, s->gp[GP_EVOLVE] = 0;
+    s->fx[FX_SCOUNT] = 0;
+}
+
+static void from_v6(Song *s, const SongV6 *o)
+{
+    fill_default(s);
+    memcpy(s->on, o->on, sizeof s->on);
+    for (int i = 0; i < NS; i++)
+        memcpy(s->sp[i], o->sp[i], sizeof o->sp[i]);
+    memcpy(s->gp, o->gp, sizeof o->gp);
+    memcpy(s->lfo, o->lfo, sizeof s->lfo);
+    memcpy(s->fx, o->fx, sizeof o->fx);
+    legacy_quiet(s);
+}
+
 static void from_v5(Song *s, const SongV5 *o)
 {
     static const int pk_steps[6] = {4, 1, 1, 1, 1, 2}, pk_rate[6] = {2, 2, 3, 4, 5, 5};
@@ -1219,6 +1492,7 @@ static void from_v5(Song *s, const SongV5 *o)
     memcpy(s->fx, o->fx, sizeof o->fx);
     s->fx[FX_SYMP] = s->fx[FX_BODY] = 0;
     s->fx[FX_BTYPE] = BODY_WOOD;
+    legacy_quiet(s);
 }
 
 /* globals from a save without GLIDE (it gets v0.0.3's default) */
@@ -1271,6 +1545,7 @@ int song_load(const char *path)
         return 0;
     Song s;
     SongV5 o;
+    SongV6 o6;
     unsigned char buf[sizeof s + 1];
     size_t got = fread(buf, 1, sizeof buf, f);
     fclose(f);
@@ -1279,6 +1554,10 @@ int song_load(const char *path)
         memcpy(&magic, buf, sizeof magic);
     if (magic == SONG_MAGIC && got == sizeof s)
         memcpy(&s, buf, sizeof s);
+    else if (magic == SONG_MAGIC_V6 && got == sizeof o6) {
+        memcpy(&o6, buf, sizeof o6);
+        from_v6(&s, &o6);
+    }
     else {
         if (magic == SONG_MAGIC_V5 && got == sizeof o)
             memcpy(&o, buf, sizeof o);

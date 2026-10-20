@@ -8,27 +8,36 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define JD_VERSION "0.1.1"
+#define JD_VERSION "0.2.0"
 
 #define NS 5
-#define NSP 19 /* params per string */
-#define NGP 10 /* global params */
+#define NSP 20 /* params per string */
+#define NGP 14 /* global params */
 #define NLFO 2
 #define NLP 4  /* params per LFO */
-#define NFX 12 /* effect params */
+#define NFX 17 /* effect params */
+#define NSYMP 12 /* most sympathetic strings */
 
 /* SP_NOTE is a scale degree above the root (in EQUAL, a semitone). Each
  * string has two Euclidean rings sharing one step length (SP_RATE): the
  * pluck ring plucks on its pulses, the bow ring swells the bow on its pulses
  * (off: the bow plays continuously). Ring fields: on, steps, pulses, rotate. */
 enum { SP_NOTE, SP_FINE, SP_LEVEL, SP_BOW, SP_DECAY, SP_BRIGHT, SP_FOLD, SP_STIFF, SP_POS, SP_BUZZ,
-       SP_PON, SP_PSTEPS, SP_PPULSES, SP_PROT, SP_BON, SP_BSTEPS, SP_BPULSES, SP_BROT, SP_RATE };
+       SP_PON, SP_PSTEPS, SP_PPULSES, SP_PROT, SP_BON, SP_BSTEPS, SP_BPULSES, SP_BROT, SP_RATE, SP_PAN };
 enum { RING_PLUCK, RING_BOW, NRING };
 #define RING_P(ring, field) (SP_PON + (ring) * 4 + (field)) /* field 0 on, 1 steps, 2 pulses, 3 rotate */
 #define NSOUND SP_PON /* sound params come first */
-enum { GP_MODE, GP_SCALE, GP_ROOT, GP_CHANGES, GP_BPM, GP_DRIFT, GP_GLIDE, GP_CUTOFF, GP_MASTER, GP_SYNC };
+/* MOTION: small steps .. bold leaps; HOME: pull back to the tonic; COLOR:
+ * sevenths and suspensions; EVOLVE: chance a chord change also nudges a
+ * string's rhythm */
+enum { GP_MODE, GP_SCALE, GP_ROOT, GP_CHANGES, GP_BPM, GP_DRIFT, GP_GLIDE, GP_CUTOFF, GP_MASTER, GP_SYNC,
+       GP_MOTION, GP_HOME, GP_COLOR, GP_EVOLVE };
 enum { LP_RATE, LP_SHAPE, LP_TARGET, LP_DEPTH };
-enum { FX_DTIME, FX_DFB, FX_DMIX, FX_VSEND, FX_VTIME, FX_VTONE, FX_GRATE, FX_GDUTY, FX_GSMOOTH, FX_SYMP, FX_BODY, FX_BTYPE };
+/* FX_S*: the sympathetic strings: how many, how they are tuned, their
+ * octave, level and ring time */
+enum { FX_DTIME, FX_DFB, FX_DMIX, FX_VSEND, FX_VTIME, FX_VTONE, FX_GRATE, FX_GDUTY, FX_GSMOOTH, FX_SYMP, FX_BODY, FX_BTYPE,
+       FX_SCOUNT, FX_STUNE, FX_SOCT, FX_SLEVEL, FX_SRING };
+enum { STUNE_SCALE, STUNE_CHORD, STUNE_CHORD9, STUNE_DRONE, STUNE_FIFTHS, NSTUNE };
 enum { BODY_WOOD, BODY_GOURD, BODY_BRONZE, BODY_HARMONIC, NBODY };
 enum { MODE_MONO, MODE_CHORD };
 enum { SYNC_OFF, SYNC_AUTO, SYNC_LEAD, SYNC_FOLLOW, NSYNCMODE };
@@ -61,6 +70,7 @@ typedef struct {
     volatile int step[NS][NRING];   /* current step of each ring */
     volatile float flash[NS][NRING]; /* 1 on a hit, fading (display) */
     volatile float bow_env[NS];     /* how open each bow is now */
+    volatile float symp_meter;      /* sympathetic strings, all together */
     volatile uint32_t chords;     /* counts chord changes (manual and CHANGES) */
 } Live;
 
@@ -91,6 +101,12 @@ int engine_nscales(void);
 const char *engine_scale_name(int sc);
 const char *engine_chord_name(void); /* the current chord, in the scale's own names */
 void engine_degree_name(int degree, char *b, int n); /* e.g. "Pa'" or "E3-14" */
+const char *engine_chord_history(int i);  /* i chords ago (0 = now), "" if none */
+int engine_scale_n(void);                 /* degrees per octave */
+float engine_scale_cents(int i);          /* degree i (0..n-1) in cents */
+void engine_pc_name(int pc, char *b, int n); /* degree name without octave */
+int engine_symp_degree(int k);            /* where sympathetic string k is tuned */
+float engine_symp_meter(int k);
 
 /* transport for wifi sync: position in 16th steps with fraction, a hard
  * jump, a playback speed trim (1.0 = none) and a float tempo */

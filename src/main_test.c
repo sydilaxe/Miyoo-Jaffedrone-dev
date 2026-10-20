@@ -104,12 +104,13 @@ int main(int argc, char **argv)
 
     const int secs = 12, chunk = RATE / 100;
     int16_t *pcm = malloc(sizeof(int16_t) * 2 * RATE * secs);
-    static const char *const pages[PAGE_COUNT] = {"play", "strings", "drone", "mod", "fx"};
+    static const char *const pages[PAGE_COUNT] = {"play", "sound", "compose", "mix"};
     for (int t = 0, f = 0; t < secs * 100; t++, f += chunk) {
         engine_render(pcm + 2 * f, chunk);
         ui_tick(10);
         if (t == 300)
-            press(BTN_DOWN), press(BTN_DOWN), press(BTN_X), press(BTN_X), press(BTN_X);
+            press(BTN_DOWN), press(BTN_DOWN), press(BTN_X), press(BTN_X), press(BTN_X), press(BTN_SELECT), press(BTN_SELECT),
+                press(BTN_SELECT), press(BTN_SELECT);
         if (t >= 320 && t < 320 + PAGE_COUNT * 10 && (t - 320) % 10 == 0) {
             shot(out, pages[(t - 320) / 10], fb);
             press(BTN_R1);
@@ -249,6 +250,35 @@ int main(int argc, char **argv)
                song.fx[FX_BODY], song.gp[GP_CHANGES]);
     }
 
+    /* a v0.1 save (JDR6): loads as it was, with nothing new switched on */
+    {
+        enum { NSP6 = 19, NGP6 = 10, NFX6 = 12 };
+        int32_t v6[1 + NS + NS * NSP6 + NGP6 + NLFO * NLP + NFX6];
+        song_default();
+        memset(v6, 0, sizeof v6);
+        v6[0] = 0x4a445206;
+        int k = 1;
+        for (int s = 0; s < NS; s++)
+            v6[k++] = 1;
+        for (int s = 0; s < NS; s++)
+            for (int p = 0; p < NSP6; p++)
+                v6[k++] = song.sp[s][p];
+        for (int p = 0; p < NGP6; p++)
+            v6[k++] = song.gp[p];
+        v6[1 + NS + NS * NSP6 + GP_SCALE] = 6; /* YAMAN */
+        k += NLFO * NLP;
+        v6[k + FX_BODY] = 77;
+        char p6[512];
+        snprintf(p6, sizeof p6, "%s/old_v6.sav", out);
+        FILE *f6 = fopen(p6, "wb");
+        fwrite(v6, 1, sizeof v6, f6);
+        fclose(f6);
+        song_default();
+        int ok = song_load(p6);
+        printf("save compat v0.1: load=%d scale=%d body=%d symp=%d evolve=%d pan1=%d pan5=%d\n", ok, song.gp[GP_SCALE],
+               song.fx[FX_BODY], song.fx[FX_SCOUNT], song.gp[GP_EVOLVE], song.sp[0][SP_PAN], song.sp[4][SP_PAN]);
+    }
+
     /* tone shapers: each must change the spectrum, not the level much */
     {
         static const int which[5] = {SP_LEVEL, SP_FOLD, SP_STIFF, SP_POS, SP_BUZZ};
@@ -356,6 +386,65 @@ int main(int argc, char **argv)
         for (int i = 0; i < secs4; i++)
             engine_render(pcm, RATE / 100);
         printf("  CHANGES 1 BAR: %u chord changes in 4 bars\n", live.chords - c0);
+    }
+
+    /* sympathetic strings: each tuning, and how much they add */
+    for (int t = -1; t < NSTUNE; t++) {
+        static const char *const tn[NSTUNE] = {"SCALE", "CHORD", "CHORD+", "DRONE", "FIFTHS"};
+        song_default();
+        engine_init(RATE);
+        engine_set_playing(1);
+        song.gp[GP_CHANGES] = 0;
+        song.fx[FX_SCOUNT] = t < 0 ? 0 : 7;
+        song.fx[FX_STUNE] = t < 0 ? 0 : t;
+        double r = 0, sm = 0;
+        for (int i = 0; i < 6; i++) {
+            engine_render(pcm, RATE);
+            if (i >= 2)
+                r += rms_of(pcm, 0, RATE) / 4, sm += live.symp_meter / 4;
+        }
+        printf("symp %-6s: rms %.0f, symp peak %.3f, tuned:", t < 0 ? "OFF" : tn[t], r, sm);
+        for (int k = 0; t >= 0 && k < 7; k++) {
+            char nm[16];
+            engine_degree_name(engine_symp_degree(k), nm, sizeof nm);
+            printf(" %s", nm);
+        }
+        printf("\n");
+    }
+    /* CHORD tuning follows a chord change */
+    {
+        song_default();
+        song.fx[FX_SCOUNT] = 6;
+        engine_init(RATE);
+        engine_set_playing(1);
+        engine_render(pcm, RATE / 10);
+        engine_next_chord();
+        engine_render(pcm, RATE / 10);
+        printf("symp after a change to [%s]:", engine_chord_name());
+        for (int k = 0; k < 6; k++) {
+            char nm[16];
+            engine_degree_name(engine_symp_degree(k), nm, sizeof nm);
+            printf(" %s", nm);
+        }
+        printf("\n");
+    }
+    /* MOTION 0 vs 100 (root steps), EVOLVE 100 (rhythm nudges per change) */
+    for (int mo = 0; mo <= 100; mo += 100) {
+        song_default();
+        song.gp[GP_MOTION] = mo;
+        song.gp[GP_EVOLVE] = 100;
+        int before[NS][NSP];
+        memcpy(before, song.sp, sizeof before);
+        printf("MOTION %3d:", mo);
+        for (int i = 0; i < 10; i++) {
+            engine_next_chord();
+            printf(" %s", engine_chord_name());
+        }
+        int nudged = 0;
+        for (int s = 0; s < NS; s++)
+            for (int p = SP_PON; p <= SP_BROT; p++)
+                nudged += before[s][p] != song.sp[s][p];
+        printf("  (EVOLVE 100: %d ring settings changed)\n", nudged);
     }
 
     /* progressions: eight changes in each scale */
@@ -467,7 +556,8 @@ int main(int argc, char **argv)
             full += abs(p[2 * i]) > 31500;
         printf("pops: worst window %.3f at %.2f s (want < 0.5), %d windows over 0.05, %d full-scale samples (want 0)\n", worst,
                (double)worst_i / RATE, bad, full);
-        /* mute: string 1 alone, muted, must fade to silence */
+        /* mute: string 1 alone (no sympathetic strings), muted, must fade to silence */
+        song.fx[FX_SCOUNT] = 0;
         for (int s = 1; s < NS; s++)
             song.on[s] = 0;
         song.fx[FX_DMIX] = song.fx[FX_VSEND] = 0;

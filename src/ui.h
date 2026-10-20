@@ -10,7 +10,7 @@ enum {
     BTN_COUNT
 };
 
-enum { PAGE_PLAY, PAGE_STRINGS, PAGE_DRONE, PAGE_MOD, PAGE_FX, PAGE_COUNT };
+enum { PAGE_PLAY, PAGE_SOUND, PAGE_COMPOSE, PAGE_MIX, PAGE_COUNT };
 
 /* Set by the platform to serialise UI edits against the audio callback. */
 extern void (*ui_lock)(void);

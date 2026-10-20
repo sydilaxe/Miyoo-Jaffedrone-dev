@@ -20,7 +20,7 @@ A noise "bow" keeps the string ringing, held in check by the loop's own level. P
 - **BUZZ:** a jawari-like bridge. A strong note buzzes, and the buzz blooms and fades as the note decays, as
   on a tanpura or sitar.
 
-Shared by all five strings (FX page, BODY):
+Shared by all five strings (SOUND page, bottom rows):
 
 - **COUPLE:** sympathetic resonance. The strings share a bridge, so each one hears the others, and an
   untouched string tuned to a harmonic starts to ring.
@@ -31,6 +31,25 @@ Shared by all five strings (FX page, BODY):
   - **HARMONIC:** resonates on the overtones.
 
   BRONZE and HARMONIC follow the root note.
+- **TONE:** the master lowpass.
+
+## Sympathetic strings
+
+Up to 12 extra strings that are never played. Like a sitar's taraf, they ring only when the main strings
+sound their pitches through the bridge, adding a halo around the drone. On the SOUND page:
+
+- **SYMP:** how many (0 turns them off).
+- **S TUNE:** how they are tuned. In the two chord modes they retune by themselves at every chord change.
+  - **SCALE:** the degrees of the scale, rising.
+  - **CHORD:** the notes of the current chord.
+  - **CHORD+:** the chord plus the scale tone above each chord note (9ths, 11ths, 13ths).
+  - **DRONE:** root and fifth, like a tanpura.
+  - **FIFTHS:** a stack of fifths from the root.
+- **S OCT:** their octave, from one below the root to two above.
+- **S LEVEL** and **S RING:** how loud they are, and how long they ring.
+
+Each tuning repeats within two octaves. A second pass over the same pitches is detuned a few cents, so doubled
+strings shimmer against each other.
 
 ## Rhythm: two rings per string
 
@@ -57,13 +76,19 @@ scale above the root.
 | YAMAN, BHAIRAV, KAFI, BHUPALI, MALKAUNS | ragas in just (shruti) ratios | a tanpura below (Sa and Pa, or Ma for Malkauns); the upper strings wander a step or two at a time |
 | SLENDRO, PELOG, SELISIR | Javanese and Balinese gamelan tunings | a gong tone, a kempyung pair and a beating unison pair (ombak) move in parallel |
 
-How the chord progressions move:
+How the chord progressions move, and the COMPOSE controls that shape them:
 
-- **Root motion** is mostly by fourths and fifths, sometimes by thirds and steps.
-- **Chord types:** triads, sevenths and suspensions.
-- **Going home:** the further the progression wanders, the likelier it returns to the tonic.
+- **Root motion** is mostly by fourths and fifths. **MOTION** sets the rest: low favours thirds, which keep two
+  notes in common, so changes are calm; high favours steps and distant moves. For ragas it sets how far a
+  voice may wander; for gamelan, how far the block moves.
+- **Chord types:** triads, sevenths and suspensions. **COLOR** sets how often sevenths and suspensions
+  appear; for gamelan, how widely the beating pair is tuned apart.
+- **Going home:** the further the progression wanders, the likelier it returns to the tonic. **HOME** sets
+  how strong that pull is; for ragas it draws voices back to Sa and Pa.
 - **Voice leading:** each string moves to the nearest chord tone in its own register. Common tones stay, and
   the bass sometimes holds as a pedal.
+- **EVOLVE:** the chance that a chord change also nudges one string's rhythm: a ring rotates, gains or loses
+  a pulse or a step, or a bow ring starts or stops breathing.
 
 Note names are shown in each scale's own language:
 
@@ -85,10 +110,14 @@ The strings are not re-plucked on a change. They keep ringing and slide to the n
   corners, and the pulses are joined into an inner shape that lights on each pluck and fills as the bow swells.
   The band at the top shows the scale, the current chord and the bars until the next change.
 - **The quiet view** (tap L2 on PLAY): only the five strings and their rings, for meditation.
-- **STRINGS:** the sound of each string.
-- **DRONE:** voicing, scale, root, changes, tempo, drift, glide, cutoff, master and Wi-Fi sync.
-- **MOD:** two LFOs.
-- **FX:** delay, reverb, gate and body.
+- **SOUND:** tone and sound shaping. Each string's note, fine tuning, bow, decay, brightness, fold,
+  stiffness, pick position and buzz, then coupling, body, tone and the sympathetic strings.
+- **COMPOSE:** the algorithmic side. On the left, the scale is drawn as a polygon, each degree at its true
+  angle in the octave. The current chord is a shape inside it, the sympathetic strings are dots outside, and
+  below are the chord, the chords before it and the bars until the next change. On the right: scale, root,
+  voicing, changes, glide, tempo, MOTION, HOME, COLOR, EVOLVE, drift, Wi-Fi sync and the two LFOs.
+- **MIX:** each string's level and pan with a meter, master, the sympathetic strings' level, then delay, reverb
+  and gate.
 
 ## Controls
 
@@ -121,14 +150,14 @@ The strings are not re-plucked on a change. They keep ringing and slide to the n
 | L1 / R1 | previous / next page |
 | MENU | exit |
 
-**On the edit pages:** up/down chooses a parameter and Y/X adjusts it. On STRINGS, left/right chooses a
-string, A turns it on or off, and B plucks it.
+**On SOUND, COMPOSE and MIX:** the d-pad moves to the nearest control in that direction, and Y / X lowers or
+raises it. On a string's control, A mutes or unmutes that string and B plucks it. Elsewhere, B plucks all five.
 
 Songs from earlier versions load as they sounded:
 
 - the scale is set to EQUAL;
 - each old PLUCK setting becomes a one-pulse pluck ring with the same timing;
-- COUPLE, BODY and CHANGES are off.
+- COUPLE, BODY, CHANGES, EVOLVE and the sympathetic strings are off.
 
 ## Build
 
