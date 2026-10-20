@@ -1434,7 +1434,7 @@ static void draw_splash(uint32_t *fb)
         float xy[10] = {0, 40, 325, 248, 640, 92, 640, 480, 0, 480};
         gfx_poly(xy, 5, 0xdcdcd8);
     }
-    draw_logo(x, y, h, 1.4f, C_SLATE, C_SLATE_D);
+    draw_logo_a(x, y, h, 1.4f, C_SLATE, C_SLATE_D, 210); /* 82%: painted on, the boards faintly through */
     char v[24];
     snprintf(v, sizeof v, "v%s", JD_VERSION);
     gfx_text((SCREEN_W - gfx_text_w(v, FONT_SMALL)) / 2, (int)(y + h + 16), v, C_SLATE, FONT_SMALL);
