@@ -100,7 +100,7 @@ def N(w):
 LETTERS = [(J, 62), (A, 74), (F, 52), (F, 52), (E, 48), (D, 50), (R, 64), (O, 58), (N, 66), (E, 48)]
 # optical spacing after each letter: a round side leaves air of its own, so
 # the gaps beside the O close up
-KERN = [0, 0, 0, 0, 0, 0, -1, -2, 0, 0]
+KERN = [0, 0, 0, 0, 0, 0, -6.5, -2, 0, 0]
 VALLEY_AFTER = 4  # the roofs meet after the first E
 
 
