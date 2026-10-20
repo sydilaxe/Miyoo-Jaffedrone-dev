@@ -31,17 +31,23 @@ Shared by all five strings (SOUND page, bottom rows):
   - **WOOD:** a wooden box.
   - **GOURD:** a gourd, like a tanpura's.
   - **BRONZE:** rings inharmonically, like a gong.
-  - **HARMONIC:** resonates on the overtones.
+  - **TUNED:** resonates on the overtones.
+  - **METAL, CERAMIC, GLASS:** the wind materials as a body (see BORE below).
 
-  BRONZE and HARMONIC follow the root note.
+  BRONZE, TUNED and METAL follow the root note.
+- **BORE:** what the wind voices are made of (see Wind).
 - **TONE:** the master lowpass.
 
 ## Wind
 
-ENGINE (top of the SOUND page) switches every voice from strings to **WIND**. Everything else stays: the
-five voices, their rings, the progressions, the sympathetic strings, the mix and the effects.
+Each voice can be a string or a wind. The **VOICE** row at the top of the SOUND page sets it per column:
+STRING, or one of the seven wind voices below. So voice 1 can be a bowed string and voices 2 and 3 a reed and
+a bansuri. The rows under each column follow its voice: a wind column shows BREATH, AIR, EMBOUCH and so on,
+and its rings show TONGUE and BREATH on the PLAY page. Everything else is shared: the progressions, the
+sympathetic strings, the mix and the effects. Changing a voice while it sounds starts it afresh with a short
+fade in.
 
-A wind voice is a bore: a waveguide closed by a loss filter, driven at the mouthpiece by an **EXCITER**:
+A wind voice is a bore: a waveguide closed by a loss filter, driven at the mouthpiece by an exciter:
 
 | Exciter | Like | How it sounds |
 |---|---|---|
@@ -53,14 +59,15 @@ A wind voice is a bore: a waveguide closed by a loss filter, driven at the mouth
 | RECORDER | recorder | a duct-guided jet: steady and sweet, with a chiff on each attack |
 | BANSURI | Indian bamboo flute | a longer, breathier transverse jet |
 
-**MATERIAL** sets the walls' losses, a little wall dispersion and the body's resonances:
+**BORE** (the shared row) sets what every wind voice is made of: the walls' losses and a little wall
+dispersion. The body TYPE has the same materials, for a body that matches.
 
 - **WOOD:** warm and soft.
-- **METAL:** bright, with a ringing body tuned to the root.
+- **METAL:** bright; as a body, it rings at the root.
 - **CERAMIC:** an earthen hollow, like an ocarina.
 - **GLASS:** pure and sparkling, with high, long resonances.
 
-In WIND the voice controls take their wind meanings:
+A wind voice's controls take their wind meanings:
 
 | Strings | Wind | |
 |---|---|---|
@@ -71,7 +78,9 @@ In WIND the voice controls take their wind meanings:
 | BUZZ | GROWL | a rasp in the breath |
 | HARM | REG | the register: 1st to 5th |
 
-The pluck ring becomes **TONGUE**: each pulse is a tongued attack, a push of breath with a chiff. The bow ring
+The pluck ring becomes **TONGUE**: each pulse is a tongued note. The tongue stops the air for an instant,
+then a quick push of breath comes through with a burst of breath noise; lips buzz harder at the start, a
+growl blooms, and the flutes chiff. The note holds for most of a step and falls back. The bow ring
 becomes **BREATH**: it swells the blowing. Flutes, recorders and bansuris sound an octave higher than the
 strings, as flutes do. Each voice is checked by the test harness: every exciter in every material plays in
 tune within a few cents over three octaves. The lip voice listens to itself and lips its pitch onto the note,
@@ -79,10 +88,12 @@ as a player does.
 
 ## Undertones
 
-SUB (MIX page) gives every voice, in both engines, undertones that ring beneath it. Every n-th cycle of the
+SUB (MIX page) gives every voice, string or wind, undertones that ring beneath it. Every n-th cycle of the
 voice strikes a resonance n times lower, so the undertone follows the voice's pitch and dynamics.
 
-- **SUB:** how loud.
+- **SUB:** how loud. At high settings the undertone is lightly saturated, adding overtones so it is heard
+  even on the Miyoo's small speaker, which plays little below about 200 Hz. Headphones bring out the full
+  depth.
 - **SUB DIV:** an octave below (OCT), a twelfth below (12TH), two octaves below (2 OCT), or the octave and the
   twelfth together (OCT+12).
 - **SUB RES:** how long the undertones ring, from a short thump to a long resonant hum.
@@ -206,15 +217,30 @@ The SONG page holds:
 
 ## Binaural
 
-Binaural is built into the strings, not added as a separate tone. The sound of the strings is shifted a few
-hertz down in the left ear and up in the right, so every overtone of every string, and the sympathetic
-strings, beats between the ears at the same rate. Listen on headphones.
+Binaural is built into the voices, not added as a separate tone. Their sound below about 1 kHz is shifted
+down in the left ear and up in the right by half the beat each, so every low partial of every voice, and
+the sympathetic strings, beats between the ears at the same rate. Beats are heard best on carriers of a few
+hundred hertz and not at all above about 1 kHz, so the highs are left as they are. Listen on headphones.
 
-- **BEAT:** the beat rate, 0.5–12 Hz. The display names the band it falls in (DELTA below 4 Hz, THETA
-  4–8 Hz, ALPHA above). OFF by default.
+- **BEAT:** 0.1 to 40 Hz, in fine steps through the slow bands. The display names the band and the common
+  uses: DELTA below 4 Hz (about 3 Hz for deep sleep), THETA 4 to 8 Hz (6 Hz is the most used for
+  meditation), 7.83 Hz (the Schumann resonance), ALPHA 8 to 12 Hz (relaxed), BETA and 40 Hz GAMMA. OFF by
+  default.
 - **DEPTH:** how much of the shifted sound is used.
-- **LOCK:** TEMPO puts the beat on the nearest power-of-two multiple of the tempo, so it pulses with the
-  rhythm.
+- **MODE:**
+  - **FREE:** the beat as set.
+  - **TEMPO:** the beat moves to the nearest power-of-two multiple of the tempo, so it pulses with the
+    rhythm.
+  - **A>T 10M:** a journey from alpha (10 Hz) down to theta (6 Hz) over ten minutes.
+  - **T>D 15M:** from theta (6 Hz) down to delta (2.5 Hz) over fifteen minutes.
+
+  Journeys count only while the drone plays.
+
+The research on binaural beats is limited and mixed. These settings are the ones most often used and
+studied, not a promise of an effect: 6 Hz theta for meditation (Lavallee et al. 2011), about 3 Hz delta in
+sleep (Jirakittayakorn and Wongsawat 2018), and carriers of about 250–400 Hz (see
+[a review](https://pmc.ncbi.nlm.nih.gov/articles/PMC6165862/) and
+[the sleep study](https://www.frontiersin.org/journals/human-neuroscience/articles/10.3389/fnhum.2018.00387/full)).
 
 ## Sound quality
 
@@ -223,8 +249,10 @@ strings, beats between the ears at the same rate. Listen on headphones.
 - The wavefolder is anti-aliased: it averages the fold over each sample from its antiderivative.
 - The reverb is an eight-line feedback delay network with damping in every line and slow modulation, for a
   dense tail that doesn't ring. TIME runs from 0.5 to 10 seconds.
-- A 6 ms look-ahead leveller (up to 10x lift) keeps peaks clean without thumps, and the output is rounded to
-  16 bits with triangular dither, so quiet tails fade smoothly.
+- Loudness stays even across settings. A slow leveller keeps the average level steady: it lifts quiet sounds
+  (up to 30x) over a few seconds, turns loud ones down faster, and never lifts silence. Then a 6 ms
+  look-ahead limiter turns peaks down without thumps. So MASTER is a volume control, not a way to make up
+  for a quiet patch. The output is rounded to 16 bits with triangular dither, so quiet tails fade smoothly.
 - The reverb and delay hear the sound after TONE, so a dark tone has dark echoes, and four allpasses diffuse
   attacks into a bloom instead of distinct echoes.
 - Every delay position is kept within its buffer: a float can't count samples past 2^24 (5.8 minutes) to the
@@ -294,7 +322,7 @@ SELECT** cycles it OFF, BASIC and DETAIL; LOG shows in the header while it runs,
   `STAT load avg 4% peak 9% late 0 | peak 0.71 rms 0.18 clips 0 | leveller avg 3.1 min 1.9 | sync lead`
 
   - **load:** how much of each audio buffer's time rendering took.
-  - **late:** callbacks that came after a gap of more than one and a half buffers. These are crackles.
+  - **late:** audio dropouts: times the sound card ran out of sound. These are crackles.
   - **peak**, **rms** and **clips:** the output level, and samples near full scale.
   - **leveller:** how much the leveller lifts the sound.
 - **Voices** (DETAIL): each voice's wanted and measured pitch in hertz and cents, its meter, its breath or
@@ -338,5 +366,5 @@ Every push runs the **build** workflow:
   `test-output`.
 
 To publish a release with the zip attached, go to **Actions → build → Run workflow** and fill in a tag such as
-`v0.5.0`. Pushing a `v*` tag, or creating a release on the website, does the same. The release text comes from
+`v0.6.0`. Pushing a `v*` tag, or creating a release on the website, does the same. The release text comes from
 `.github/release-notes.md`.

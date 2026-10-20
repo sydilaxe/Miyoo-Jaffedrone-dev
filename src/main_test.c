@@ -140,8 +140,8 @@ static double hz_yin(const int16_t *pcm, int from, int n)
 static void solo(int engine, int ex, int mat, int note, int breath)
 {
     song_default();
-    song.gp[GP_ENGINE] = engine;
-    song.gp[GP_EXCITE] = ex;
+    for (int s = 0; s < NS; s++)
+        song.sp[s][SP_VOICE] = engine == ENG_WIND ? 1 + ex : 0;
     song.gp[GP_MATERIAL] = mat;
     engine_init(RATE);
     engine_set_playing(1);
@@ -553,7 +553,7 @@ int main(int argc, char **argv)
         int zc = 0;
         for (int i = 1; i < RATE * 4; i++)
             zc += (pcm[2 * i] >= 0) != (pcm[2 * i - 2] >= 0);
-        printf("body %-8s: rms %.0f, zero crossings/s %d\n", b < 0 ? "OFF" : (const char *[]){"WOOD", "GOURD", "BRONZE", "HARMONIC"}[b],
+        printf("body %-8s: rms %.0f, zero crossings/s %d\n", b < 0 ? "OFF" : (const char *[]){"WOOD", "GOURD", "BRONZE", "TUNED", "METAL", "CERAMIC", "GLASS"}[b],
                rms_of(pcm, RATE, RATE * 3), zc / 4);
     }
 
@@ -672,48 +672,55 @@ int main(int argc, char **argv)
         printf("\n");
     }
 
-    /* binaural: the beat between the ears, from the product of left and
-     * right (lowpassed), whose zero crossings come at twice the beat */
-    for (int beat = 8; beat <= 16; beat += 8) {
+    /* binaural: left and right drift in and out of phase at the beat; count
+     * the sign flips of their correlation in 50 ms windows (two a beat).
+     * Indices into the beat table: 0.5 Hz, 4 Hz, 8 Hz */
+    static const int beat_idx[3] = {4, 12, 21};
+    static const double beat_want[3] = {0.5, 4.0, 8.0};
+    for (int k = 0; k < 3; k++) {
         song_default();
         engine_init(RATE);
         engine_set_playing(1);
         song.gp[GP_CHANGES] = 0;
         song.fx[FX_SCOUNT] = 0;
         song.fx[FX_DMIX] = song.fx[FX_VSEND] = 0;
-        song.fx[FX_BINBEAT] = beat;
+        song.fx[FX_BINBEAT] = beat_idx[k];
         song.lfo[0][LP_DEPTH] = 0;
         song.gp[GP_DRIFT] = 0;
         for (int s = 0; s < NS; s++)
             song.on[s] = s == 2, song.sp[s][SP_PON] = 0, song.sp[s][SP_PAN] = 0;
         engine_render(pcm, RATE * 2);
-        engine_render(pcm, RATE * 4);
-        double lp = 0, last = 0;
-        int zc = 0;
-        for (int i = 0; i < RATE * 4; i++) {
-            double m = (double)pcm[2 * i] * pcm[2 * i + 1];
-            lp += (m - lp) * 0.0005;
-            if (i > RATE / 2) {
-                double mean = 0; /* crossings of the slow product around its own mean */
-                (void)mean;
-            }
-            if (i > 0 && ((lp - 3e6 > 0) != (last - 3e6 > 0)))
-                zc++;
-            last = lp;
+        int secs8 = 8;
+        engine_render(pcm, RATE * secs8);
+        /* the beat lives below 1 kHz (only that part is shifted): lowpass both ears */
+        static float lo[2][RATE * 8];
+        float a0 = 0, a1 = 0, b0 = 0, b1 = 0, lk = 1.f - expf(-6.2831853f * 600.f / RATE);
+        for (int i = 0; i < RATE * secs8; i++) {
+            a0 += (pcm[2 * i] - a0) * lk, a1 += (a0 - a1) * lk;
+            b0 += (pcm[2 * i + 1] - b0) * lk, b1 += (b0 - b1) * lk;
+            lo[0][i] = a1, lo[1][i] = b1;
         }
-        /* a cleaner reading: correlate left and right in 50 ms windows */
         int flips = 0, prev = 0;
-        for (int w = 0; w + 2400 <= RATE * 4; w += 1200) {
+        for (int w = 0; w + 2400 <= RATE * secs8; w += 1200) {
             double c = 0;
             for (int i = w; i < w + 2400; i++)
-                c += (double)pcm[2 * i] * pcm[2 * i + 1];
+                c += (double)lo[0][i] * lo[1][i];
             int sg = c > 0 ? 1 : -1;
             if (prev && sg != prev)
                 flips++;
             prev = sg;
         }
-        printf("binaural %.1f Hz: L/R correlation flips %.1f per s (want about %.1f)\n", beat * 0.5, flips / 4.0, beat * 0.5 * 2);
+        printf("binaural %.1f Hz: L/R correlation flips %.1f per s (want about %.1f)\n", beat_want[k], flips / (double)secs8,
+               beat_want[k] * 2);
     }
+    /* a journey starts from alpha: ALPHA to THETA begins at 10 Hz */
+    song_default();
+    engine_init(RATE);
+    engine_set_playing(1);
+    song.fx[FX_BINBEAT] = 16;
+    song.fx[FX_BINLOCK] = 2;
+    engine_render(pcm, RATE);
+    printf("binaural journey A>T: beat now %.2f Hz (starts at 10)\n", live.bin_hz);
 
     /* HARM: string 1 (A2) touched at 1/2 sounds an octave up: the waveform
      * repeats every half period */
@@ -980,6 +987,51 @@ int main(int argc, char **argv)
         printf("presets: saved YAMAN, changed to %s, loaded back -> %s (load %d, peek %d scale %d)\n", engine_scale_name(before),
                engine_scale_name(song.gp[GP_SCALE]), ok, peek, t.gp[GP_SCALE]);
     }
+    /* mixed voices: one voice turned from a string into a reed while it
+     * plays stays on its note; a v0.5 WIND song gives every voice its exciter */
+    {
+        solo(ENG_STRINGS, 0, 0, 0, 0);
+        song.sp[2][SP_BOW] = 60;
+        engine_render(pcm, RATE * 2);
+        double fs = hz_yin(pcm, RATE, RATE / 4);
+        song.sp[2][SP_VOICE] = 1 + EX_REED;
+        engine_render(pcm, RATE * 3);
+        double fw = hz_yin(pcm, RATE, RATE / 4), pk = 0;
+        for (int i = 0; i < RATE * 3 * 2; i++)
+            pk = fmax(pk, abs(pcm[i]) / 32768.0);
+        song_default();
+        for (int v = 0; v < NS; v++)
+            song.on[v] = 1, song.sp[v][SP_VOICE] = v < 2 ? 0 : 1 + v; /* 2 strings, flute, free, recorder */
+        engine_init(RATE);
+        engine_set_playing(1);
+        engine_render(pcm, RATE * 4);
+        double rms = 0;
+        for (int i = 0; i < RATE * 4 * 2; i++)
+            rms += (double)pcm[i] * pcm[i];
+        rms = sqrt(rms / (RATE * 8)) / 32768.0;
+        struct {
+            uint32_t magic;
+            int on[NS], sp[NS][24], gp[NGP], lfo[NLFO][NLP], fx[NFX];
+            int prog_n, prog_pos, prog_note[NPROG][NS], prog_fine[NPROG][NS];
+            char prog_name[NPROG][24];
+        } old;
+        memset(&old, 0, sizeof old);
+        old.magic = 0x4a44520bu; /* JDR11 (v0.5) */
+        for (int v = 0; v < NS; v++)
+            old.on[v] = 1, old.sp[v][SP_LEVEL] = 50, old.sp[v][SP_PSTEPS] = old.sp[v][SP_PPULSES] = 4;
+        old.gp[GP_SCALE] = 1, old.gp[GP_ROOT] = 45, old.gp[GP_BPM] = 80;
+        old.gp[GP_ENGINE] = ENG_WIND, old.gp[GP_EXCITE] = EX_DOUBLE, old.gp[GP_MATERIAL] = MAT_GLASS;
+        char po[512];
+        snprintf(po, sizeof po, "%s/old_wind.jds", out);
+        FILE *f = fopen(po, "wb");
+        fwrite(&old, sizeof old, 1, f);
+        fclose(f);
+        int ok = song_load(po);
+        printf("mixed voices: string %.1f Hz -> reed %.1f Hz (peak %.2f); 2 strings + 3 winds rms %.3f; v0.5 WIND song load %d"
+               " voices %s %s body %d (want GLASS %d)\n",
+               fs, fw, pk, rms, ok, engine_voice_name(song.sp[0][SP_VOICE]), engine_voice_name(song.sp[4][SP_VOICE]),
+               song.fx[FX_BTYPE], BODY_GLASS);
+    }
     /* chord memory: record four chords, then play them back in order */
     {
         song_default();
@@ -1042,8 +1094,8 @@ int main(int argc, char **argv)
     double secs_cpu = (double)(clock() - c0) / CLOCKS_PER_SEC;
     printf("dsp: 30 s rendered in %.2f s host cpu (%.1f%%)\n", secs_cpu, secs_cpu / 30.0 * 100.0);
     song_default();
-    song.gp[GP_ENGINE] = ENG_WIND;
-    song.gp[GP_EXCITE] = EX_BANSURI;
+    for (int s = 0; s < NS; s++)
+        song.sp[s][SP_VOICE] = 1 + EX_BANSURI;
     song.gp[GP_SUB] = 50;
     engine_init(RATE);
     engine_set_playing(1);
@@ -1052,7 +1104,10 @@ int main(int argc, char **argv)
         engine_render(pcm, 1024);
     secs_cpu = (double)(clock() - c0) / CLOCKS_PER_SEC;
     printf("dsp WIND (bansuri, undertones): 30 s in %.2f s host cpu (%.1f%%)\n", secs_cpu, secs_cpu / 30.0 * 100.0);
-    /* WIND screens */
+    /* mixed screens: two strings, then a reed, a flute and a bansuri */
+    song.sp[0][SP_VOICE] = song.sp[1][SP_VOICE] = 0;
+    song.sp[2][SP_VOICE] = 1 + EX_REED;
+    song.sp[3][SP_VOICE] = 1 + EX_FLUTE;
     for (int i = 0; i < 300; i++) {
         engine_render(pcm, RATE / 100);
         ui_tick(10);
@@ -1083,8 +1138,8 @@ int main(int argc, char **argv)
     snprintf(path, sizeof path, "%s/wind.wav", out);
     {
         song_default();
-        song.gp[GP_ENGINE] = ENG_WIND;
-        song.gp[GP_EXCITE] = EX_BANSURI;
+        for (int s = 0; s < NS; s++)
+            song.sp[s][SP_VOICE] = 1 + EX_BANSURI;
         song.gp[GP_SUB] = 40;
         engine_init(RATE);
         engine_set_playing(1);

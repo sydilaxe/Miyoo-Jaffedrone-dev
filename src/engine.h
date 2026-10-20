@@ -8,10 +8,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define JD_VERSION "0.5.0"
+#define JD_VERSION "0.6.0"
 
 #define NS 5
-#define NSP 24 /* params per string */
+#define NSP 25 /* params per string */
 #define NGP 27 /* global params */
 #define NPROG 16 /* chords in the progression memory */
 #define NPRESET 10
@@ -26,10 +26,12 @@
  * (off: the bow plays continuously). Ring fields: on, steps, pulses, rotate. */
 enum { SP_NOTE, SP_FINE, SP_LEVEL, SP_BOW, SP_DECAY, SP_BRIGHT, SP_FOLD, SP_STIFF, SP_POS, SP_BUZZ,
        SP_PON, SP_PSTEPS, SP_PPULSES, SP_PROT, SP_BON, SP_BSTEPS, SP_BPULSES, SP_BROT, SP_RATE, SP_PAN,
-       SP_PCHANCE, SP_BCHANCE, SP_HARM, SP_GATE };
+       SP_PCHANCE, SP_BCHANCE, SP_HARM, SP_GATE, SP_VOICE };
 /* SP_PCHANCE / SP_BCHANCE: the chance each pulse of the ring plays.
  * SP_HARM: a light touch at a node (OFF, or the 2nd .. 5th harmonic).
- * SP_GATE: how far the string's sound follows its own bow ring. */
+ * SP_GATE: how far the string's sound follows its own bow ring.
+ * SP_VOICE: what the voice is: a string (0) or a wind voice (1 + its
+ * exciter), so strings and winds can play side by side. */
 enum { RING_PLUCK, RING_BOW, NRING };
 #define RING_P(ring, field) (SP_PON + (ring) * 4 + (field)) /* field 0 on, 1 steps, 2 pulses, 3 rotate */
 #define NSOUND SP_PON /* sound params come first */
@@ -51,10 +53,11 @@ enum { PROG_FREE, PROG_RECORD, PROG_PLAY, NPROGMODE };
  * a twelfth or two octaves below, or both octave and twelfth), as a
  * resonance that rings (SUB RES) under the voice. */
 enum { SUB_OCT, SUB_TWELFTH, SUB_TWO_OCT, SUB_OCT_TWELFTH, NSUBDIV };
-/* GP_ENGINE: STRINGS or WIND. In WIND, each voice is a bore (a waveguide)
- * driven by GP_EXCITE and made of GP_MATERIAL; the per-voice BOW, DECAY,
- * STIFF, POS, BUZZ and HARM slots become BREATH, AIR, EMBOUCH, VIBRATO,
- * GROWL and REGISTER, the pluck ring tongues and the bow ring breathes. */
+/* A wind voice (SP_VOICE > 0) is a bore (a waveguide) driven by its exciter
+ * and made of GP_MATERIAL (the BORE); its BOW, DECAY, STIFF, POS, BUZZ and
+ * HARM slots become BREATH, AIR, EMBOUCH, VIBRATO, GROWL and REGISTER, the
+ * pluck ring tongues and the bow ring breathes. GP_ENGINE and GP_EXCITE
+ * are no longer used; they are kept so older songs load. */
 enum { ENG_STRINGS, ENG_WIND, NENGINE };
 enum { EX_LIP, EX_REED, EX_DOUBLE, EX_FLUTE, EX_FREE, EX_RECORDER, EX_BANSURI, NEXCITE };
 enum { MAT_WOOD, MAT_METAL, MAT_CERAMIC, MAT_GLASS, NMATERIAL };
@@ -69,7 +72,8 @@ enum { LP_RATE, LP_SHAPE, LP_TARGET, LP_DEPTH };
 enum { FX_DTIME, FX_DFB, FX_DMIX, FX_VSEND, FX_VTIME, FX_VTONE, FX_BINBEAT, FX_BINDEPTH, FX_BINLOCK, FX_SYMP, FX_BODY,
        FX_BTYPE, FX_SCOUNT, FX_STUNE, FX_SOCT, FX_SLEVEL, FX_SRING };
 enum { STUNE_SCALE, STUNE_CHORD, STUNE_CHORD9, STUNE_DRONE, STUNE_FIFTHS, NSTUNE };
-enum { BODY_WOOD, BODY_GOURD, BODY_BRONZE, BODY_HARMONIC, NBODY };
+/* body TYPE: METAL, CERAMIC and GLASS are the bore materials as a body */
+enum { BODY_WOOD, BODY_GOURD, BODY_BRONZE, BODY_TUNED, BODY_METAL, BODY_CERAMIC, BODY_GLASS, NBODY };
 enum { MODE_MONO, MODE_CHORD };
 enum { SYNC_OFF, SYNC_AUTO, SYNC_LEAD, SYNC_FOLLOW, NSYNCMODE };
 enum { LT_CUTOFF, LT_LEVEL, LT_PITCH, LT_BOW, LT_DELAY, LT_VERB, NLT };
@@ -126,7 +130,10 @@ void engine_stats_reset(void);
 float engine_voice_pitch(int v); /* from its recent sound (log DETAIL only) */
 
 const ParamDef *sparam_def(int p);
-const char *sparam_name(int p); /* the name for the current engine */
+const char *sparam_name(int s, int p); /* the name for voice s's engine */
+int engine_voice_wind(int s);          /* 1 if voice s is a wind voice */
+int engine_wind_count(const Song *g);  /* how many voices are winds */
+const char *engine_voice_name(int v);  /* an SP_VOICE value: STRING, LIP .. */
 const ParamDef *gparam_def(int p);
 const ParamDef *lparam_def(int p);
 const ParamDef *fparam_def(int p);

@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Publish a GitHub release with this tag (e.g. v0.5.0). Leave empty to just build."
+        description: "Publish a GitHub release with this tag (e.g. v0.6.0). Leave empty to just build."
         required: false
         default: ""
 
@@ -52,6 +52,8 @@ jobs:
           grep -q "notes outside the mode 0, detuned notes 0" $r
           grep -q "presets: saved YAMAN, changed to .*, loaded back -> YAMAN" $r
           grep -q "sync: bpm=128.0 peers=1 leader=1" $r
+          # strings and winds side by side; a v0.5 WIND song loads as winds
+          grep -q "v0.5 WIND song load 1 voices DOUBLE DOUBLE body 6 (want GLASS 6)" $r
       - uses: actions/upload-artifact@v4
         if: always()
         with:

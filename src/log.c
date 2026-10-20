@@ -123,7 +123,7 @@ static void status(AudioTiming *t, double secs)
             s.f_meas[v] = engine_voice_pitch(v);
             double cents = s.f_meas[v] > 0.f ? 1200.0 * log2(s.f_meas[v] / s.f_target[v]) : 0;
             put("VOICE", "%d %s target %.1f Hz measured %.1f Hz (%+.0f c) meter %.3f breath %.2f corr %.3f", v + 1,
-                song.gp[GP_ENGINE] == ENG_WIND ? "wind" : "string", s.f_target[v], s.f_meas[v], cents, s.meter[v],
+                engine_voice_name(song.sp[v][SP_VOICE]), s.f_target[v], s.f_meas[v], cents, s.meter[v],
                 s.breath[v], s.corr[v]);
             if (s.f_meas[v] > 0.f && fabs(cents) > 30 && s.meter[v] > 0.02f)
                 put("HINT", "voice %d sounds %+.0f cents off its note: try another REG, BREATH or EMBOUCH", v + 1, cents);
@@ -135,8 +135,8 @@ static void status(AudioTiming *t, double secs)
         put("HINT", "%u audio dropouts (crackles): raise JD_BUFFER, or fewer sympathetic strings", t->late);
     if (s.clips)
         put("HINT", "%u samples near full scale: MASTER above 80 drives the clipper; lower it for a cleaner sound", s.clips);
-    if (lev > 14.f && s.peak < 0.2f)
-        put("HINT", "the leveller is lifting the sound fully: raise LEVEL or BREATH/BOW for less noise");
+    if (lev > 27.f)
+        put("HINT", "the sound is very quiet and is being lifted fully: raise LEVEL, BOW or BREATH, or TONE");
     (void)secs;
     if (t)
         memset(t, 0, offsetof(AudioTiming, buffer_us));

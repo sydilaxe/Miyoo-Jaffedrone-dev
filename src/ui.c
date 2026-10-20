@@ -210,7 +210,7 @@ static const int comp_b[7] = {GP_MOTION, GP_HOME, GP_COLOR, GP_EVOLVE, GP_RELATE
  * memory) in its own file. What each holds is read back for the tiles. */
 static char preset_dir[400] = ".";
 static struct {
-    int used, scale, engine, exciter, bpm, prog_n;
+    int used, scale, winds, bpm, prog_n;
 } slot_info[NPRESET];
 static int slots_read;
 
@@ -227,8 +227,7 @@ static void read_slots(void)
         slot_info[i].used = song_peek(p, &t);
         if (slot_info[i].used) {
             slot_info[i].scale = t.gp[GP_SCALE];
-            slot_info[i].engine = t.gp[GP_ENGINE];
-            slot_info[i].exciter = t.gp[GP_EXCITE];
+            slot_info[i].winds = engine_wind_count(&t);
             slot_info[i].bpm = t.gp[GP_BPM];
             slot_info[i].prog_n = t.prog_n;
         }
@@ -280,16 +279,16 @@ static void layout(int pg)
     const int cw = SCREEN_W / NS;
     switch (pg) {
     case PAGE_SOUND:
-        cell(3, ENGINE_Y, 207, 30, CK_G, 0, GP_ENGINE);
-        cell(216, ENGINE_Y, 207, 30, CK_G, 0, GP_EXCITE);
-        cell(429, ENGINE_Y, 208, 30, CK_G, 0, GP_MATERIAL);
+        for (int s = 0; s < NS; s++) /* each voice: a string, or one of the winds */
+            cell(s * cw + 3, ENGINE_Y, cw - 6, 30, CK_S, s, SP_VOICE);
         for (int r = 0; r < 9; r++)
             for (int s = 0; s < NS; s++)
                 cell(s * cw + 3, SOUND_Y + r * SOUND_RH, cw - 6, SOUND_RH - 3, CK_S, s, sound_rows[r]);
-        cell(3, BAND_Y, 154, 32, CK_F, 0, FX_SYMP); /* (in WIND the body is the material's) */
-        cell(163, BAND_Y, 154, 32, CK_F, 0, FX_BODY);
-        cell(323, BAND_Y, 154, 32, CK_F, 0, FX_BTYPE);
-        cell(483, BAND_Y, 154, 32, CK_G, 0, GP_CUTOFF);
+        cell(3, BAND_Y, cw - 6, 32, CK_F, 0, FX_SYMP);
+        cell(cw + 3, BAND_Y, cw - 6, 32, CK_F, 0, FX_BODY);
+        cell(2 * cw + 3, BAND_Y, cw - 6, 32, CK_F, 0, FX_BTYPE);
+        cell(3 * cw + 3, BAND_Y, cw - 6, 32, CK_G, 0, GP_MATERIAL); /* the winds' bore */
+        cell(4 * cw + 3, BAND_Y, cw - 6, 32, CK_G, 0, GP_CUTOFF);
         for (int i = 0; i < 5; i++)
             cell(i * cw + 3, BAND_Y + 36, cw - 6, 34, CK_F, 0, FX_SCOUNT + i);
         break;
@@ -389,7 +388,7 @@ static void adjust(int dir, int repeats)
     {
         char nm[32];
         if (c->kind == CK_S)
-            snprintf(nm, sizeof nm, "%d %s", c->a + 1, sparam_name(c->b));
+            snprintf(nm, sizeof nm, "%d %s", c->a + 1, sparam_name(c->a, c->b));
         else if (c->kind == CK_L)
             snprintf(nm, sizeof nm, "LFO%d %s", c->a + 1, d->name);
         else
@@ -417,8 +416,8 @@ static void adjust(int dir, int repeats)
         engine_set_bpm((float)nv);
     if (c->kind == CK_G && c->b == GP_SYNC)
         engine_set_rate(1.0);
-    if (c->kind == CK_G && c->b == GP_ENGINE)
-        say("%s", nv == ENG_WIND ? "WIND: BORES, BREATH AND TONGUE" : "STRINGS: BOW AND PLUCK");
+    if (c->kind == CK_S && c->b == SP_VOICE)
+        say("VOICE %d: %s", c->a + 1, nv ? "A WIND: BREATH AND TONGUE" : "A STRING: BOW AND PLUCK");
     if (c->kind == CK_G && c->b == GP_MODE)
         say("%s", nv == MODE_MONO ? "MONO: ALL STRINGS FOLLOW STRING 1" : "CHORD: EACH STRING ITS OWN NOTE");
 }
@@ -545,15 +544,15 @@ static void action(int b, int repeats)
                 engine_pluck(cur_s);
                 hand_plucks++;
                 if (jdlog_level() == LOG_DETAIL)
-                    jdlog("hand %s voice %d", song.gp[GP_ENGINE] == ENG_WIND ? "tongue" : "pluck", cur_s + 1);
+                    jdlog("hand %s voice %d", engine_voice_wind(cur_s) ? "tongue" : "pluck", cur_s + 1);
             }
         }
         else {
             bowing = cur_s;
             bow_start_ms = now_ms;
             if (jdlog_level() == LOG_DETAIL)
-                jdlog("hand %s voice %d%s", song.gp[GP_ENGINE] == ENG_WIND ? "blow" : "bow", cur_s + 1,
-                      held[BTN_L1] ? (song.gp[GP_ENGINE] == ENG_WIND ? ", overblown" : ", harmonic") : "");
+                jdlog("hand %s voice %d%s", engine_voice_wind(cur_s) ? "blow" : "bow", cur_s + 1,
+                      held[BTN_L1] ? (engine_voice_wind(cur_s) ? ", overblown" : ", harmonic") : "");
             engine_bow(cur_s, 1);
             /* R1 added while L1 is held: overblow (wind) or a harmonic (strings) */
             engine_overblow(cur_s, held[BTN_L1]);
@@ -790,7 +789,8 @@ static void param_row(int x, int y, int w, int h, int sel, int on, const char *n
     chamfer(x, y, w, h, 7, sel ? gfx_mix(C_PANEL2, col, 0.18f) : C_PANEL);
     if (sel)
         gfx_fill(x, y, 3, h, col);
-    gfx_text(x + 9, y + 2, name, sel ? col : C_DIM, FONT_SMALL);
+    if (gfx_text_w(name, FONT_SMALL) + gfx_text_w(val, FONT_SMALL) + 24 <= w) /* a long value hides the name */
+        gfx_text(x + 9, y + 2, name, sel ? col : C_DIM, FONT_SMALL);
     gfx_text(x + w - 9 - gfx_text_w(val, FONT_SMALL), y + 2, val, on ? C_TEXT : C_DIM, FONT_SMALL);
     int bx = x + 9, bw = w - 18, by = y + h - 8;
     gfx_fill(bx, by, bw, 4, C_LINE);
@@ -803,7 +803,7 @@ static void param_row(int x, int y, int w, int h, int sel, int on, const char *n
 }
 
 /* a vibrating string: a standing wave whose amplitude follows the meter */
-static void draw_string_big(int x0, int x1, int y, float amp, float ph, uint32_t col, int on, float big)
+static void draw_string_big(int x0, int x1, int y, float amp, float ph, uint32_t col, int on, float big, int wind)
 {
     int w = x1 - x0;
     /* in decibels, so a quiet string still visibly moves: -54 dB still,
@@ -821,7 +821,7 @@ static void draw_string_big(int x0, int x1, int y, float amp, float ph, uint32_t
         }
         py = yy;
     }
-    if (song.gp[GP_ENGINE] == ENG_WIND) {
+    if (wind) {
         /* a bore: two walls, closed at the mouthpiece, open at the bell */
         int hw = (int)(9 * big) + 4;
         uint32_t wc = on ? gfx_mix(C_BG, col, 0.55f) : C_OFF;
@@ -837,9 +837,9 @@ static void draw_string_big(int x0, int x1, int y, float amp, float ph, uint32_t
     gfx_fill(x1, y - 7, 3, 15, on ? col : C_OFF);
 }
 
-static void draw_string(int x0, int x1, int y, float amp, float ph, uint32_t col, int on)
+static void draw_string(int x0, int x1, int y, float amp, float ph, uint32_t col, int on, int wind)
 {
-    draw_string_big(x0, x1, y, amp, ph, col, on, 1.f);
+    draw_string_big(x0, x1, y, amp, ph, col, on, 1.f, wind);
 }
 
 /* ---------------------------------------------------------------- pages */
@@ -891,10 +891,13 @@ static void draw_footer(void)
         "PRESET A:LOAD X:SAVE R2+Y:CLEAR  PROG R2+Y:CLEAR  SEL:CHORD",
     };
     const char *h = hints[page];
-    if (page != PAGE_PLAY && page != PAGE_SONG && song.gp[GP_ENGINE] == ENG_WIND)
+    int cw_ = cell_string() >= 0 ? engine_voice_wind(cell_string()) : 0; /* the voice under the cursor */
+    if (page == PAGE_PLAY)
+        cw_ = engine_voice_wind(cur_s);
+    if (page != PAGE_PLAY && page != PAGE_SONG && cw_)
         h = page == PAGE_COMPOSE ? "D-PAD:MOVE Y:- X:+ B:TONGUE L1/R1:PAGE SEL:NEXT CHORD"
                                  : "D-PAD:MOVE Y:- X:+ A:MUTE B:TONGUE L1/R1:PAGE SEL:CHORD";
-    if (page == PAGE_PLAY && song.gp[GP_ENGINE] == ENG_WIND)
+    if (page == PAGE_PLAY && cw_)
         h = "A:ON/OFF B:FEWER X:ROT Y:NEW L1:TONGUE R1:BLOW L1+R1:OVERBLOW";
     else if (page == PAGE_PLAY)
         h = "A:ON/OFF B:FEWER X:ROT Y:NEW L1:PLUCK R1:BOW L1+R1:HARMONIC";
@@ -929,7 +932,7 @@ static uint32_t cell_col(const Cell *c)
         return C_SEA;
     if (c->kind == CK_F && c->b >= FX_SYMP)
         return C_SAND;
-    if (c->kind == CK_G && (c->b == GP_ENGINE || c->b == GP_EXCITE || c->b == GP_MATERIAL))
+    if (c->kind == CK_G && c->b == GP_MATERIAL)
         return C_SAND;
     if (c->kind == CK_G && c->b >= GP_SUB)
         return C_CEDAR + 0x303030;
@@ -957,18 +960,15 @@ static void draw_cells(void)
             on = 0;
         if (c->kind == CK_S && c->b == SP_NOTE && song.gp[GP_MODE] == MODE_MONO && c->a > 0)
             on = 0;
-        int wind = song.gp[GP_ENGINE] == ENG_WIND;
-        if (c->kind == CK_G && (c->b == GP_EXCITE || c->b == GP_MATERIAL) && !wind)
-            on = 0;
-        if (c->kind == CK_F && c->b == FX_BTYPE && wind)
-            on = 0;
+        if (c->kind == CK_G && c->b == GP_MATERIAL && !engine_wind_count(&song))
+            on = 0; /* no winds, no bore */
         if (c->kind == CK_G && (c->b == GP_SUBDIV || c->b == GP_SUBRES) && !song.gp[GP_SUB])
             on = 0;
         if (c->kind == CK_G && c->b == GP_MODALITY && song.gp[GP_SCALE] != 0)
             on = 0; /* modes are for EQUAL */
         if (c->kind == CK_G && song.gp[GP_KEYLOCK] && (c->b == GP_SCALE || c->b == GP_ROOT || c->b == GP_MODALITY))
             on = 0; /* locked */
-        param_row(c->x, c->y, c->w, c->h, i == sel_cell[page], on, c->kind == CK_S ? sparam_name(c->b) : d->name, val, t,
+        param_row(c->x, c->y, c->w, c->h, i == sel_cell[page], on, c->kind == CK_S ? sparam_name(c->a, c->b) : d->name, val, t,
                   d->min < 0, cell_col(c));
     }
 }
@@ -989,7 +989,7 @@ static void string_heads(int y0, int h)
         if (!on)
             gfx_fill(x + w - 26, y0 + 12, 18, 4, C_RED);
         if (h > 30)
-            draw_string_big(x + 12, x + w - 12, y0 + h - 9, on ? live.meter[s] : 0.f, live.phase[s], col, on, 0.6f);
+            draw_string_big(x + 12, x + w - 12, y0 + h - 9, on ? live.meter[s] : 0.f, live.phase[s], col, on, 0.6f, engine_voice_wind(s));
         else /* a short header: the string as a line that brightens as it sounds */
             gfx_fill(x + 70, y0 + 11, w - 80, 2, on ? gfx_mix(C_PANEL2, col, 0.3f + fminf(0.7f, live.meter[s] * 4.f)) : C_OFF);
     }
@@ -1177,8 +1177,11 @@ static void draw_song(void)
         if (used) {
             snprintf(t, sizeof t, "%.10s", engine_scale_name(slot_info[k].scale));
             gfx_text(c->x + 30, c->y + 2, t, C_TEXT, FONT_SMALL);
-            static const char *const exs[NEXCITE] = {"LIP", "REED", "DOUBLE", "FLUTE", "FREE", "RECORD", "BANSURI"};
-            snprintf(t, sizeof t, "%s %d", slot_info[k].engine ? exs[slot_info[k].exciter] : "STRING", slot_info[k].bpm);
+            int w = slot_info[k].winds; /* how the five voices are split */
+            if (w == 0 || w == NS)
+                snprintf(t, sizeof t, "%s %d", w ? "WIND" : "STRING", slot_info[k].bpm);
+            else
+                snprintf(t, sizeof t, "%dS+%dW %d", NS - w, w, slot_info[k].bpm);
             gfx_text(c->x + 8, c->y + 28, t, C_DIM, FONT_SMALL);
             if (slot_info[k].prog_n) /* a mark for a kept progression */
                 para(c->x + c->w - 22, c->y + 32, 12, 12, 3, col);
@@ -1300,7 +1303,7 @@ static void draw_play(void)
         /* the string itself, brighter while bowed by hand */
         int sy = t + drop + 42;
         draw_string(x + 12, x + w - 12, sy, on ? live.meter[s] : 0.f, live.phase[s],
-                    gfx_mix(col, C_TEXT, 0.6f * live.hand_env[s] + 0.4f * live.flash[s][RING_PLUCK]), on);
+                    gfx_mix(col, C_TEXT, 0.6f * live.hand_env[s] + 0.4f * live.flash[s][RING_PLUCK]), on, engine_voice_wind(s));
         float r = 38.f, cx = x + w / 2.f;
         float pcy = sy + 20 + r + 12, bcy = pcy + 2 * r + 34;
         draw_ring(cx, pcy, r, P, RING_PLUCK, live.step[s][RING_PLUCK], live.flash[s][RING_PLUCK], col,
@@ -1311,7 +1314,7 @@ static void draw_play(void)
         if (!P[SP_BON] && on && P[SP_BOW] > 0)
             gfx_fill((int)(cx - r * 0.6f), (int)bcy - 1, (int)(r * 1.2f), 3, gfx_mix(C_BG, col, 0.5f));
         char lb[24];
-        int wnd = song.gp[GP_ENGINE] == ENG_WIND;
+        int wnd = engine_voice_wind(s);
         snprintf(lb, sizeof lb, P[SP_PCHANCE] < 100 ? (wnd ? "TONGUE %d%%" : "PLUCK %d%%") : (wnd ? "TONGUE" : "PLUCK"),
                  P[SP_PCHANCE]);
         gfx_text((int)cx - gfx_text_w(lb, FONT_SMALL) / 2, (int)(pcy + r + 4), lb, sel && ring == 0 ? col : C_DIM, FONT_SMALL);
@@ -1329,7 +1332,7 @@ static void draw_quiet(void)
     for (int s = 0; s < NS; s++) {
         int y = 120 + s * 72, on = song.on[s];
         const int *P = song.sp[s];
-        draw_string_big(40, SCREEN_W - 150, y, on ? live.meter[s] : 0.f, live.phase[s], scol[s], on, 2.4f);
+        draw_string_big(40, SCREEN_W - 150, y, on ? live.meter[s] : 0.f, live.phase[s], scol[s], on, 2.4f, engine_voice_wind(s));
         draw_ring(SCREEN_W - 110, y, 20.f, P, RING_PLUCK, live.step[s][RING_PLUCK], live.flash[s][RING_PLUCK], scol[s], 0, !on);
         draw_ring(SCREEN_W - 50, y, 20.f, P, RING_BOW, live.step[s][RING_BOW], P[SP_BON] ? live.bow_env[s] : live.hand_env[s],
                   scol[s], 0, !on);

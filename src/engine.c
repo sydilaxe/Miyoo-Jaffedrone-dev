@@ -5,7 +5,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define SONG_MAGIC 0x4a44520bu    /* JDR11: drone attack/release, key lock, modes, progression memory */
+#define SONG_MAGIC 0x4a44520du    /* JDR13: each voice a string or a wind (v0.6) */
+#define SONG_MAGIC_V12 0x4a44520cu /* JDR12: binaural beats as a table index (0.1 .. 40 Hz), journeys */
+#define SONG_MAGIC_V11 0x4a44520bu /* JDR11: drone attack/release, key lock, modes, progression memory (v0.5) */
 #define SONG_MAGIC_V10 0x4a44520au /* JDR10: WIND engine and undertones (v0.4) */
 #define SONG_MAGIC_V8 0x4a445208u /* JDR8: chance, RELATE, HARM, string gates, binaural (v0.3) */
 #define SONG_MAGIC_V7 0x4a445207u /* JDR7: sympathetic strings, pan, MOTION/HOME/COLOR/EVOLVE (v0.2) */
@@ -43,6 +45,7 @@ typedef struct {
     int fx[NFX_V5];
 } SongV5;
 #define NSP_V6 19
+#define NSP_V12 24
 #define NGP_V6 10
 #define NFX_V6 12
 typedef struct {
@@ -64,7 +67,7 @@ typedef struct {
 typedef struct {
     uint32_t magic;
     int on[NS];
-    int sp[NS][NSP];
+    int sp[NS][NSP_V12];
     int gp[16];
     int lfo[NLFO][NLP];
     int fx[NFX];
@@ -72,12 +75,24 @@ typedef struct {
 typedef struct {
     uint32_t magic;
     int on[NS];
-    int sp[NS][NSP];
+    int sp[NS][NSP_V12];
     int gp[22];
     int lfo[NLFO][NLP];
     int fx[NFX];
 } SongV10;
+typedef struct { /* JDR11 and JDR12: the song before SP_VOICE */
+    uint32_t magic;
+    int on[NS];
+    int sp[NS][NSP_V12];
+    int gp[NGP];
+    int lfo[NLFO][NLP];
+    int fx[NFX];
+    int prog_n, prog_pos;
+    int prog_note[NPROG][NS], prog_fine[NPROG][NS];
+    char prog_name[NPROG][24];
+} SongV12;
 
+#define NBEAT 33 /* binaural beat settings */
 Song song;
 Live live;
 /* each voice's recent sound, kept only while the log reads pitches */
@@ -145,21 +160,22 @@ static const ParamDef sparams[NSP] = {
     {"BRIGHT", 0, 100}, {"FOLD", 0, 100},  {"STIFF", 0, 100}, {"POS", 0, 100},  {"BUZZ", 0, 100},
     {"PLUCK", 0, 1},    {"P STEPS", 1, 16}, {"P PULSES", 1, 16}, {"P ROTATE", 0, 15},
     {"BOW RING", 0, 1}, {"B STEPS", 1, 16}, {"B PULSES", 1, 16}, {"B ROTATE", 0, 15}, {"RATE", 0, 5},
-    {"PAN", -50, 50},   {"P CHANCE", 0, 100}, {"B CHANCE", 0, 100}, {"HARM", 0, 4}, {"GATE", 0, 100}};
+    {"PAN", -50, 50},   {"P CHANCE", 0, 100}, {"B CHANCE", 0, 100}, {"HARM", 0, 4}, {"GATE", 0, 100},
+    {"VOICE", 0, NEXCITE}};
 static const ParamDef gparams[NGP] = {{"VOICING", 0, 1},   {"SCALE", 0, NSCALE - 1}, {"ROOT", 24, 72},
                                       {"CHANGES", 0, 5},   {"BPM", 40, 200},         {"DRIFT", 0, 100},
                                       {"GLIDE", 0, 7},     {"CUTOFF", 0, 100},       {"MASTER", 0, 100},
                                       {"WIFI SYNC", 0, NSYNCMODE - 1}, {"MOTION", 0, 100},
                                       {"HOME", 0, 100},    {"COLOR", 0, 100},        {"EVOLVE", 0, 100},
                                       {"CHANCE", 0, 100},  {"RELATE", 0, 2},          {"ENGINE", 0, NENGINE - 1},
-                                      {"EXCITER", 0, NEXCITE - 1}, {"MATERIAL", 0, NMATERIAL - 1},
+                                      {"EXCITER", 0, NEXCITE - 1}, {"BORE", 0, NMATERIAL - 1},
                                       {"SUB", 0, 100},     {"SUB DIV", 0, NSUBDIV - 1}, {"SUB RES", 0, 100},
                                       {"ATTACK", 0, 100},  {"RELEASE", 0, 100},     {"KEY LOCK", 0, 1},
                                       {"MODE", 0, NMODAL - 1}, {"PROG", 0, NPROGMODE - 1}};
 static const ParamDef lparams[NLP] = {{"RATE", 0, 6}, {"SHAPE", 0, NSH - 1}, {"TARGET", 0, NLT - 1}, {"DEPTH", 0, 100}};
 static const ParamDef fparams[NFX] = {{"TIME", 0, 7},   {"FEEDBK", 0, 95}, {"MIX", 0, 100},
                                       {"SEND", 0, 100}, {"TIME", 0, 100},  {"TONE", 0, 100},
-                                      {"BEAT", 0, 24},  {"DEPTH", 0, 100}, {"LOCK", 0, 1},
+                                      {"BEAT", 0, NBEAT - 1}, {"DEPTH", 0, 100}, {"MODE", 0, 3},
                                       {"COUPLE", 0, 100}, {"BODY", 0, 100}, {"TYPE", 0, NBODY - 1},
                                       {"SYMP", 0, NSYMP}, {"S TUNE", 0, NSTUNE - 1}, {"S OCT", -1, 2},
                                       {"S LEVEL", 0, 100}, {"S RING", 0, 100}};
@@ -168,7 +184,22 @@ static const int rate_div16[6] = {1, 2, 4, 8, 16, 32};
 static const char *const rate_names[6] = {"1/16", "1/8", "1/4", "1/2", "1 BAR", "2 BARS"};
 static const int change_bars[6] = {0, 1, 2, 4, 8, 16};
 static const char *const change_names[6] = {"OFF", "1 BAR", "2 BARS", "4 BARS", "8 BARS", "16 BARS"};
-static const char *const body_names[NBODY] = {"WOOD", "GOURD", "BRONZE", "HARMONIC"};
+static const char *const body_names[NBODY] = {"WOOD", "GOURD", "BRONZE", "TUNED", "METAL", "CERAMIC", "GLASS"};
+/* binaural beats, Hz: fine steps through delta and theta (where sleep and
+ * meditation work is done: about 3 Hz for deep sleep, 6 Hz for meditation),
+ * the 7.83 Hz Schumann resonance, alpha, beta and 40 Hz gamma */
+static const float beat_hz[NBEAT] = {0.f, 0.1f, 0.2f, 0.3f, 0.5f, 0.75f, 1.f, 1.5f, 2.f, 2.5f, 3.f,
+                                     3.5f, 4.f, 4.5f, 5.f, 5.5f, 6.f, 6.5f, 7.f, 7.5f, 7.83f, 8.f,
+                                     9.f, 10.f, 10.5f, 11.f, 12.f, 14.f, 16.f, 20.f, 25.f, 30.f, 40.f};
+static const char *const binmode_names[4] = {"FREE", "TEMPO", "A>T 10M", "T>D 15M"};
+static int beat_index(float hz)
+{
+    int best = 0;
+    for (int i = 1; i < NBEAT; i++)
+        if (fabsf(beat_hz[i] - hz) < fabsf(beat_hz[best] - hz))
+            best = i;
+    return hz > 0.f ? (best ? best : 1) : 0;
+}
 static const char *const stune_names[NSTUNE] = {"SCALE", "CHORD", "CHORD+", "DRONE", "FIFTHS"};
 static const char *const note_names[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
 static const char *const sync_names[NSYNCMODE] = {"OFF", "AUTO", "LEAD", "FOLLOW"};
@@ -183,15 +214,15 @@ static const float glide_div16[8] = {0.f, 0.5f, 1.f, 2.f, 4.f, 8.f, 16.f, 32.f};
 static const char *const glide_names[8] = {"OFF", "1/32", "1/16", "1/8", "1/4", "1/2", "1 BAR", "2 BARS"};
 /* {note, fine, level, bow, decay, bright, fold, stiff, pos, buzz,
  *  pluck on, steps, pulses, rotate, bow ring on, steps, pulses, rotate, rate, pan,
- *  pluck chance, bow chance, harm, gate}
+ *  pluck chance, bow chance, harm, gate, voice}
  * Notes are JUST MAJOR degrees: root, fifth, octave, twelfth, two octaves.
  * Each string has its own sparse pluck rhythm; the top string's bow ring
  * breathes in and out, the other bows play continuously. */
-static const int def_sp[NS][NSP] = {{0, 0, 80, 35, 85, 45, 0, 0, 0, 0, 1, 4, 1, 0, 0, 4, 2, 0, 2, 0, 100, 100, 0, 0},
-                                    {4, -4, 65, 45, 92, 40, 0, 0, 0, 0, 1, 5, 2, 0, 0, 5, 3, 0, 2, -22, 90, 100, 0, 0},
-                                    {7, 3, 55, 40, 95, 55, 0, 0, 0, 0, 1, 3, 1, 1, 0, 3, 2, 0, 3, 22, 100, 100, 0, 0},
-                                    {11, 0, 40, 50, 90, 65, 0, 0, 0, 0, 1, 7, 2, 3, 0, 7, 3, 0, 2, -12, 70, 100, 0, 0},
-                                    {14, 2, 30, 55, 93, 70, 0, 0, 0, 0, 1, 6, 1, 2, 1, 5, 3, 0, 2, 12, 60, 80, 0, 0}};
+static const int def_sp[NS][NSP] = {{0, 0, 80, 35, 85, 45, 0, 0, 0, 0, 1, 4, 1, 0, 0, 4, 2, 0, 2, 0, 100, 100, 0, 0, 0},
+                                    {4, -4, 65, 45, 92, 40, 0, 0, 0, 0, 1, 5, 2, 0, 0, 5, 3, 0, 2, -22, 90, 100, 0, 0, 0},
+                                    {7, 3, 55, 40, 95, 55, 0, 0, 0, 0, 1, 3, 1, 1, 0, 3, 2, 0, 3, 22, 100, 100, 0, 0, 0},
+                                    {11, 0, 40, 50, 90, 65, 0, 0, 0, 0, 1, 7, 2, 3, 0, 7, 3, 0, 2, -12, 70, 100, 0, 0, 0},
+                                    {14, 2, 30, 55, 93, 70, 0, 0, 0, 0, 1, 6, 1, 2, 1, 5, 3, 0, 2, 12, 60, 80, 0, 0, 0}};
 static const int def_gp[NGP] = {MODE_CHORD, 1, 45, 4, 72, 30, 3, 70, 80, SYNC_OFF, 50, 50, 45, 30, 75, 1,
                                 ENG_STRINGS, EX_FLUTE, MAT_WOOD, 0, SUB_OCT, 60, 20, 45, 0, MODAL_AUTO, PROG_FREE};
 static const char *const engine_names[NENGINE] = {"STRINGS", "WIND"};
@@ -202,9 +233,18 @@ static const int def_fx[NFX] = {5, 45, 25, 35, 60, 55, 0, 100, 0, 30, 35, BODY_W
 
 const ParamDef *sparam_def(int p) { return &sparams[p]; }
 /* in WIND the string controls take on their wind meanings */
-const char *sparam_name(int p)
+int engine_voice_wind(int s) { return song.sp[s][SP_VOICE] > 0; }
+int engine_wind_count(const Song *g)
 {
-    if (song.gp[GP_ENGINE] == ENG_WIND)
+    int n = 0;
+    for (int s = 0; s < NS; s++)
+        n += g->sp[s][SP_VOICE] > 0;
+    return n;
+}
+const char *engine_voice_name(int v) { return v > 0 ? excite_names[v - 1] : "STRING"; }
+const char *sparam_name(int s, int p)
+{
+    if (engine_voice_wind(s))
         switch (p) {
         case SP_BOW: return "BREATH";
         case SP_DECAY: return "AIR";
@@ -276,7 +316,7 @@ void sparam_format(int s, int p, char *b, int n)
     case SP_HARM: {
         static const char *const hn[5] = {"OFF", "2ND", "3RD", "4TH", "5TH"};
         static const char *const rn[5] = {"1ST", "2ND", "3RD", "4TH", "5TH"};
-        snprintf(b, n, "%s", song.gp[GP_ENGINE] == ENG_WIND ? rn[x] : hn[x]);
+        snprintf(b, n, "%s", engine_voice_wind(s) ? rn[x] : hn[x]);
         return;
     }
     case SP_PCHANCE:
@@ -292,6 +332,7 @@ void sparam_format(int s, int p, char *b, int n)
         return;
     case SP_PON:
     case SP_BON: snprintf(b, n, "%s", x ? "ON" : "OFF"); return;
+    case SP_VOICE: snprintf(b, n, "%s", engine_voice_name(x)); return;
     case SP_FOLD:
     case SP_STIFF:
     case SP_POS:
@@ -367,15 +408,22 @@ void fparam_format(int p, char *b, int n)
     if (p == FX_DTIME)
         snprintf(b, n, "%s", dly_names[x]);
     else if (p == FX_BINBEAT) {
-        /* the brainwave band the beat falls in */
-        float hz = x * 0.5f;
+        /* the band the beat falls in, and the well-known settings by name */
+        float hz = beat_hz[x];
+        const char *band = hz < 4.f ? "DELTA" : hz < 8.f ? "THETA" : hz < 13.f ? "ALPHA" : hz < 30.f ? "BETA" : "GAMMA";
         if (x == 0)
             snprintf(b, n, "OFF");
+        else if (hz == 3.f)
+            snprintf(b, n, "3 SLEEP");
+        else if (hz == 6.f)
+            snprintf(b, n, "6 MEDITATE");
+        else if (hz > 7.8f && hz < 7.9f)
+            snprintf(b, n, "7.83 SCHUMANN");
         else
-            snprintf(b, n, "%.1f %s", hz, hz < 4.f ? "DELTA" : hz < 8.f ? "THETA" : "ALPHA");
+            snprintf(b, n, "%g %s", hz, band);
     }
     else if (p == FX_BINLOCK)
-        snprintf(b, n, "%s", x ? "TEMPO" : "FREE");
+        snprintf(b, n, "%s", binmode_names[x]);
     else if (p == FX_BTYPE)
         snprintf(b, n, "%s", body_names[x]);
     else if (p == FX_STUNE)
@@ -435,6 +483,7 @@ typedef struct {
     int jw, chiff_n;
     float dcx, dcy, lx1, lx2, lz1, lz2;
     float tg, chiff, pr, vph, gr_lp, nlp, frph, fr_amp;
+    float art_t, art_amp; /* a tongued note: its time (samples, <0 idle) and strength */
     /* the player's ear: the sounding period from zero crossings of a
      * lowpassed copy, and the bore correction that pulls it onto the note */
     float tr_a, tr_b, tr_prev, tr_count, tr_period, corr;
@@ -450,6 +499,7 @@ typedef struct {
     float sb_a, sb_b, sb_prev, sb_r[2][2];
     int sb_n;
     float f_sound; /* the voice's pitch in Hz now */
+    int voice_was; /* SP_VOICE last sub-block: a change starts the voice afresh */
 
     /* per sub-block targets, ramped */
     float D, D_cur, lvl, lvl_cur;
@@ -479,11 +529,13 @@ static float symp_fine[NSYMP]; /* cents: doubled strings shimmer against each ot
 static float symp_pk[NSYMP];
 static float bpm_f = 72.f;
 static float master_g, play_g;
-/* output leveller: up to LEV_MAX of makeup gain, backing off so peaks sit
- * at LEV_TARGET before MASTER */
-#define LEV_MAX 10.f
-#define LEV_TARGET 0.7f
-static float lev_env, lev_g = 1.f;
+/* loudness: a slow gain keeps the average level near AGC_TARGET (lifting
+ * by up to AGC_MAX, rising over seconds, never on silence), then a
+ * look-ahead limiter only ever turns peaks down to LIM_CEIL before MASTER */
+#define AGC_TARGET 0.15f
+#define AGC_MAX 30.f
+#define LIM_CEIL 0.7f
+static float agc_ms, agc_g = 4.f, lev_env, lev_g = 1.f;
 /* look-ahead: the leveller sees the sound 6 ms before it is heard, so it
  * can turn down smoothly ahead of a pluck instead of flattening its front */
 #define LA_MAX 512
@@ -515,7 +567,10 @@ static float fdn_mod;
  * and a slowly turning phasor shift the spectrum by a few hertz */
 static const float hil_a[4] = {0.47940086558884f, 0.87621849353931f, 0.976597589508199f, 0.997499255935549f};
 static const float hil_b[4] = {0.161758498367701f, 0.733028932341480f, 0.945349700329112f, 0.990599156684529f};
-static float hil_s[2][2][4][4]; /* channel, chain, section, {x1, x2, y1, y2} */
+static float hil_s[2][3][4][4]; /* channel, chain (low I, low Q, all), section, {x1, x2, y1, y2} */
+static float bin_lp[2][2];
+static double bin_journey_t;
+static int bin_mode_was = -1;
 static float hil_d[2];          /* the second chain's one-sample delay */
 static float bin_c = 1.f, bin_s;
 
@@ -526,9 +581,10 @@ static float midi_hz(float m) { return 440.f * exp2f((m - 69.f) / 12.f); }
 #define CHIFF_MS 0.03f
 static void string_pluck(String *s, float amp)
 {
-    if (song.gp[GP_ENGINE] == ENG_WIND) {
+    if (engine_voice_wind((int)(s - str))) {
         /* a tongued note: a push of breath that falls back, with a chiff */
-        s->tg = amp;
+        s->art_t = 0.f;
+        s->art_amp = amp;
         s->chiff = amp;
         s->chiff_n = (int)(CHIFF_MS * sr);
         return;
@@ -1290,7 +1346,7 @@ typedef struct {
     int ex, reg;
     float target_period, tr_k; /* the ear: the period wanted, its lowpass */
     float base, air, lpk, rho, disp, emb, vib, growl;
-    float pmax, att_k, tg_dec, bow_k, hand_k, hand_rel, out_g;
+    float pmax, att_k, art_k, art_hold, bow_k, hand_k, hand_rel, out_g;
     float roff, rslope;                  /* reeds */
     float lb0, la1, la2, lgain;          /* lips */
     float jetD, jet_refl, end_refl;      /* jets */
@@ -1320,18 +1376,45 @@ static void wind_tick(String *st, const WindVoice *v, float inj, float *py, floa
     st->bow_env += ((float)st->bow_open - st->bow_env) * v->bow_k;
     st->hand_env += ((float)st->hand - st->hand_env) * (st->hand ? v->hand_k : v->hand_rel);
     float h = st->hand_env;
-    float target = v->base * fmaxf(st->bow_env, h) + (fmaxf(v->base, 0.8f) - v->base) * h + st->tg;
-    st->tg *= v->tg_dec;
-    st->pr += (target - st->pr) * v->att_k;
+    /* a tongued note, like a player's "ta": the tongue stops the air for a
+     * moment, lets it go in a quick breathy push (and, on lips, a buzzing
+     * rasp), the note holds for most of a step, then lets go. Not a pluck:
+     * no decay, the breath shapes it */
+    float stop = 1.f, push = 0.f, atk = 0.f;
+    if (st->art_t >= 0.f) {
+        float t = st->art_t / sr, a = st->art_amp;
+        const float t_stop = 0.015f, t_atk = 0.05f, t_rel = 0.12f;
+        if (t < t_stop)
+            stop = 1.f - 0.85f * t / t_stop;
+        else if (t < t_atk) {
+            float u = (t - t_stop) / (t_atk - t_stop);
+            stop = 0.15f + 0.85f * u;
+            push = a * u;
+        }
+        else if (t < t_atk + v->art_hold)
+            push = a * (1.f - 0.25f * (t - t_atk) / v->art_hold);
+        else if (t < t_atk + v->art_hold + t_rel)
+            push = a * 0.75f * (1.f - (t - t_atk - v->art_hold) / t_rel);
+        else
+            st->art_t = -2.f; /* done */
+        if (t >= t_stop && t < t_stop + 0.08f)
+            atk = 1.f - (t - t_stop) / 0.08f;
+        st->art_t += 1.f;
+        if (st->art_t < 0.f)
+            st->art_t = -1.f;
+    }
+    float target = v->base * fmaxf(st->bow_env, h) * stop + (fmaxf(v->base, 0.8f) - v->base) * h + push;
+    /* the push comes in quicker than the steady breath settles */
+    st->pr += (target - st->pr) * (push > 0.f ? fmaxf(v->att_k, v->art_k) : v->att_k);
     st->vph += v->vib_inc;
     if (st->vph > 6.2831853f)
         st->vph -= 6.2831853f;
     float p = st->pr * (1.f + v->vib * 0.07f * sinf(st->vph));
-    st->gr_lp += (fnoise() - st->gr_lp) * 0.004f; /* growl: a slow rasp */
-    p *= 1.f + v->growl * 4.f * st->gr_lp;
+    st->gr_lp += (fnoise() - st->gr_lp) * 0.004f; /* growl: a slow rasp, rough at a lip attack */
+    p *= 1.f + (v->growl + (v->ex == EX_LIP ? 0.5f * atk : 0.f)) * 4.f * st->gr_lp;
     float bp = v->pmax * (1.f - expf(-2.5f * fmaxf(p, 0.f)));
     st->nlp += (fnoise() - st->nlp) * 0.55f;
-    bp *= 1.f + st->nlp * v->air;
+    bp *= 1.f + st->nlp * v->air * (1.f + 5.f * atk); /* the attack is breathy */
     float ch = 0.f;
     if (st->chiff_n > 0) {
         ch = fnoise() * st->chiff * st->chiff_n / (CHIFF_MS * sr);
@@ -1370,7 +1453,7 @@ static void wind_tick(String *st, const WindVoice *v, float inj, float *py, floa
         st->lx1 = dp;
         st->lz2 = st->lz1;
         st->lz1 = l;
-        float area = lip_rest + v->lgain * l;
+        float area = lip_rest + v->lgain * l * (1.f + 0.6f * atk);
         area = area < 0.f ? 0.f : area > 1.f ? 1.f : area;
         area *= area;
         out = area * mp + (1.f - area) * refl + ch * 0.05f;
@@ -1443,7 +1526,7 @@ static void wind_tick(String *st, const WindVoice *v, float inj, float *py, floa
 static void wind_setup(WindVoice *v, String *st, const int *P, float hz, float sps16, float hand_rel)
 {
     const Material *m = &materials[song.gp[GP_MATERIAL]];
-    int ex = song.gp[GP_EXCITE];
+    int ex = P[SP_VOICE] - 1;
     v->ex = ex;
     v->reg = P[SP_HARM] + 1;
     if (st->over) /* overblown by hand: a reed like a clarinet's jumps a twelfth, the rest an octave */
@@ -1461,7 +1544,9 @@ static void wind_setup(WindVoice *v, String *st, const int *P, float hz, float s
     v->bow_k = 1.f - expf(-1.f / fmaxf(0.5f * sps16 * rate_div16[P[SP_RATE]], 0.25f * sr));
     v->hand_k = 1.f - expf(-1.f / (0.15f * sr)); /* breath comes quicker than a drawn bow */
     v->hand_rel = hand_rel;
-    v->tg_dec = expf(-1.f / (0.3f * sr));
+    /* a tongued note holds for most of a ring step (0.08 .. 1 s) */
+    v->art_hold = fminf(1.f, fmaxf(0.08f, 0.6f * sps16 * rate_div16[P[SP_RATE]] / sr));
+    v->art_k = 1.f - expf(-1.f / (0.006f * sr));
     v->vib_inc = 6.2831853f * (4.6f + 0.3f * (float)(st - str)) / sr;
     static const float pmax[NEXCITE] = {1.0f, 0.95f, 0.8f, 1.25f, 1.0f, 1.1f, 1.2f};
     static const float att[NEXCITE] = {0.015f, 0.02f, 0.02f, 0.012f, 0.04f, 0.01f, 0.015f};
@@ -1618,8 +1703,10 @@ void engine_render(int16_t *out, int frames)
     /* the gain comes down within the look-ahead (about 3 time constants)
      * and climbs back slowly */
     int la_n = (int)(0.006f * sr) < LA_MAX - 1 ? (int)(0.006f * sr) : LA_MAX - 1;
-    float lev_rel = expf(-1.f / (0.6f * sr)), lev_att = 1.f - expf(-3.f / la_n),
-          lev_slow = 1.f - expf(-1.f / (0.05f * sr));
+    float lev_rel = expf(-1.f / (0.15f * sr)), lev_att = 1.f - expf(-3.f / la_n),
+          lev_slow = 1.f - expf(-1.f / (0.08f * sr));
+    float agc_k = 1.f - expf(-1.f / (1.0f * sr)), agc_up = 1.f - expf(-1.f / (3.f * sr)),
+          agc_down = 1.f - expf(-1.f / (0.4f * sr));
     float meter[NS] = {0}, mm = 0.f;
     int mono = song.gp[GP_MODE] == MODE_MONO;
     float sps16 = sr * 15.f / bpm_f; /* samples per 16th */
@@ -1643,11 +1730,11 @@ void engine_render(int16_t *out, int frames)
         float root_hz = midi_hz((float)song.gp[GP_ROOT]);
         while (root_hz < 90.f)
             root_hz *= 2.f;
-        int windb = song.gp[GP_ENGINE] == ENG_WIND;
-        const Material *mt = &materials[song.gp[GP_MATERIAL]];
+        int bt = song.fx[FX_BTYPE];
+        const Material *mt = &materials[bt >= BODY_METAL ? MAT_METAL + bt - BODY_METAL : MAT_WOOD];
         for (int i = 0; i < NMODE; i++) {
             float f, q;
-            if (windb) { /* in WIND the body is the instrument's material */
+            if (bt >= BODY_METAL) { /* a body of the bore materials */
                 f = mt->root_rel ? root_hz * mt->f[i] : mt->f[i];
                 q = mt->q[i];
             }
@@ -1674,20 +1761,32 @@ void engine_render(int16_t *out, int frames)
     /* the hand bow is drawn slowly across the string: it swells over about
      * two seconds and lets go in about half a second */
     float hand_k = 1.f - expf(-1.f / (0.6f * sr)), hand_rel = 1.f - expf(-1.f / (0.15f * sr));
-    int wind = song.gp[GP_ENGINE] == ENG_WIND;
     /* undertones: which divisions, how long they ring, how loud */
     static const int sub_divs[NSUBDIV][2] = {{2, 0}, {3, 0}, {4, 0}, {2, 3}};
     const int *sdiv = sub_divs[song.gp[GP_SUBDIV]];
-    float sub_g = song.gp[GP_SUB] / 100.f * 1.4f;
+    float sub_g = song.gp[GP_SUB] / 100.f * 3.f;
     float sub_r = expf(-1.f / ((0.06f + 1.5f * song.gp[GP_SUBRES] / 100.f) * sr));
     float sb_a1[NS][2], sb_a2 = sub_r * sub_r, sb_amp[NS][2], sb_k[NS];
     WindVoice wv[NS];
-    if (wind)
-        couple *= 0.3f; /* air couples more gently than a bridge */
+    int wv_on[NS];
     /* binaural: the beat in hertz; LOCK puts it on the nearest power-of-two
      * multiple of the beat rate, so it pulses with the rhythm */
-    float bin_hz = song.fx[FX_BINBEAT] * 0.5f, bin_mix = song.fx[FX_BINDEPTH] / 100.f;
-    if (bin_hz > 0.f && song.fx[FX_BINLOCK]) {
+    float bin_hz = beat_hz[song.fx[FX_BINBEAT]], bin_mix = song.fx[FX_BINDEPTH] / 100.f;
+    /* journeys: the beat glides down over minutes (alpha to theta, or theta
+     * to delta), the time counted while the drone plays */
+    if (song.fx[FX_BINLOCK] != bin_mode_was || song.fx[FX_BINBEAT] == 0) {
+        bin_mode_was = song.fx[FX_BINLOCK];
+        bin_journey_t = 0.0;
+    }
+    if (song.fx[FX_BINBEAT] && song.fx[FX_BINLOCK] >= 2) {
+        static const float from[2] = {10.f, 6.f}, to[2] = {6.f, 2.5f}, mins[2] = {10.f, 15.f};
+        int j = song.fx[FX_BINLOCK] - 2;
+        if (live.playing)
+            bin_journey_t += frames / sr;
+        float u = fminf(1.f, (float)(bin_journey_t / (mins[j] * 60.f)));
+        bin_hz = from[j] * powf(to[j] / from[j], u);
+    }
+    else if (bin_hz > 0.f && song.fx[FX_BINLOCK] == 1) {
         float b = bpm_f / 60.f;
         while (b * 1.41421f < bin_hz)
             b *= 2.f;
@@ -1697,6 +1796,12 @@ void engine_render(int16_t *out, int frames)
     }
     live.bin_hz = bin_hz;
     float bin_dc = cosf(3.14159265f * bin_hz / sr), bin_ds = sinf(3.14159265f * bin_hz / sr); /* half the beat per ear */
+    {
+        float m = sqrtf(bin_c * bin_c + bin_s * bin_s); /* keep the phasor exactly round */
+        if (m > 0.f)
+            bin_c /= m, bin_s /= m;
+    }
+    float bin_lk = 1.f - expf(-6.2831853f * 1000.f / sr);
     /* reverb: TIME sets the decay (0.5 .. 10 s), TONE the damping */
     float t60 = 0.5f * powf(20.f, song.fx[FX_VTIME] / 100.f), fdn_g[FDN];
     for (int l = 0; l < FDN; l++)
@@ -1775,6 +1880,7 @@ void engine_render(int16_t *out, int frames)
         float fg = tanf(3.14159265f * fminf(fmaxf(cut, 30.f), 0.45f * sr) / sr), fk = 1.2f;
         float fa1 = 1.f / (1.f + fg * (fg + fk)), fa2 = fg * fa1, fa3 = fg * fa2;
         float dly_mix = dly_mix_p * m_dly, vsend = verb_send * m_verb;
+        float fdn_mv = 8.f * sinf(fdn_mod); /* the reverb's slow wobble, once a sub-block */
         for (int s = 0; s < NS; s++) {
             String *st = &str[s];
             /* portamento: a lag toward the target pitch that settles in
@@ -1787,7 +1893,20 @@ void engine_render(int16_t *out, int frames)
                 st->midi_cur += (base_midi[s] - st->midi_cur) * (1.f - expf(-4.f * nn / glide_samps));
             float hz = midi_hz(st->midi_cur + m_pitch);
             hz = fmaxf(20.f, fminf(hz, sr / 8.f));
-            if (wind) {
+            if (song.sp[s][SP_VOICE] != st->voice_was) {
+                /* a new kind of voice: clear what the old one left in the
+                 * loop and fade the new one in */
+                st->voice_was = song.sp[s][SP_VOICE];
+                memset(st->buf, 0, sizeof st->buf);
+                memset(st->jet, 0, sizeof st->jet);
+                st->lp = st->env = st->dcx = st->dcy = st->lx1 = st->lx2 = st->lz1 = st->lz2 = 0.f;
+                st->tg = st->pr = st->chiff = st->corr = st->last_y = st->gain = 0.f;
+                st->ap[0][0] = st->ap[0][1] = st->ap[1][0] = st->ap[1][1] = 0.f;
+                st->burst = 0;
+                st->art_t = -1.f;
+            }
+            wv_on[s] = engine_voice_wind(s);
+            if (wv_on[s]) {
                 wind_setup(&wv[s], st, song.sp[s], hz, sps16, hand_rel);
                 wv[s].base *= m_bow;
                 if (st->D_cur <= 0.f)
@@ -1871,8 +1990,8 @@ void engine_render(int16_t *out, int frames)
                     continue;
 
                 float y, o;
-                if (wind) {
-                    wind_tick(st, &wv[s], couple * (bridge - st->last_y), &y, &o);
+                if (wv_on[s]) { /* air couples more gently than a bridge */
+                    wind_tick(st, &wv[s], 0.3f * couple * (bridge - st->last_y), &y, &o);
                     if (fold_g[s] > 0.f) {
                         float g = 1.f + fold_g[s] * 5.f, xf = o * g, dx = xf - st->fold_x1, f;
                         f = fabsf(dx) > 1e-4f ? (fold_F(xf) - fold_F(st->fold_x1)) / dx : fold_f(0.5f * (xf + st->fold_x1));
@@ -2000,7 +2119,9 @@ void engine_render(int16_t *out, int frames)
                         r[0] = z;
                         sub += z;
                     }
-                    o += sub * sub_g;
+                    /* a touch of saturation gives the undertone overtones a small
+                     * speaker can play; the ear hears the low note from them */
+                    o += (sub + 0.35f * softclip(sub * 4.f)) * sub_g;
                 }
                 /* GATE: the voice's sound follows its bow (breath) ring */
                 o *= st->lvl_cur * st->gain * play_g * (1.f - gate_d[s] + gate_d[s] * fmaxf(st->bow_env, st->hand_env));
@@ -2073,12 +2194,19 @@ void engine_render(int16_t *out, int frames)
                 bin_s = bin_s * bin_dc + bin_c * bin_ds;
                 bin_c = nc;
                 for (int ch = 0; ch < 2; ch++) {
+                    /* only the part below about 1 kHz is shifted: the ear forms
+                     * beats there; the highs pass through the same allpass
+                     * unshifted, so nothing smears above */
                     float x = ch ? R : L;
-                    float i_ = hil_chain(x, hil_a, hil_s[ch][0]);
+                    bin_lp[ch][0] += (x - bin_lp[ch][0]) * bin_lk;
+                    bin_lp[ch][1] += (bin_lp[ch][0] - bin_lp[ch][1]) * bin_lk;
+                    float lo = bin_lp[ch][1];
+                    float i_all = hil_chain(x, hil_a, hil_s[ch][2]);
+                    float i_ = hil_chain(lo, hil_a, hil_s[ch][0]);
                     float q_ = hil_d[ch];
-                    hil_d[ch] = hil_chain(x, hil_b, hil_s[ch][1]);
+                    hil_d[ch] = hil_chain(lo, hil_b, hil_s[ch][1]);
                     float shifted = ch ? i_ * bin_c - q_ * bin_s : i_ * bin_c + q_ * bin_s;
-                    x = i_ + (shifted - i_) * bin_mix;
+                    x = i_all + (shifted - i_) * bin_mix;
                     if (ch)
                         R = x;
                     else
@@ -2125,16 +2253,24 @@ void engine_render(int16_t *out, int frames)
             if (fdn_mod > 6.2831853f)
                 fdn_mod -= 6.2831853f;
             /* the reverb hears the sound after TONE, so a dark tone has dark echoes */
-            reverb_tick((post + (dl0 + dr0) * 0.5f * dly_mix) * vsend * VERB_IN * 1.4f, &wl, &wr, fdn_g, fdn_damp, 8.f * sinf(fdn_mod));
+            reverb_tick((post + (dl0 + dr0) * 0.5f * dly_mix) * vsend * VERB_IN * 1.4f, &wl, &wr, fdn_g, fdn_damp, fdn_mv);
             L += wl;
             R += wr;
 
-            /* the bowed drone alone sits some 30 dB under the plucks: lift
-             * it, and turn the plucks down ahead of time (look-ahead), with a
-             * smooth gain so nothing clips or steps */
+            /* loudness, slowly: the average level held steady, so a quiet
+             * dark drone is lifted as much as a bright plucked one, without
+             * pumping on each pluck; silence (a stopped drone) is not lifted */
+            agc_ms += (0.5f * (L * L + R * R) - agc_ms) * agc_k;
+            if (agc_ms > 1e-7f && play_g > 0.5f) {
+                float want = fminf(AGC_MAX, fmaxf(0.5f, AGC_TARGET / sqrtf(agc_ms)));
+                agc_g += (want - agc_g) * (want > agc_g ? agc_up : agc_down);
+            }
+            L *= agc_g;
+            R *= agc_g;
+            /* then peaks only turned down, a few ms ahead of time */
             float pk = fmaxf(fabsf(L), fabsf(R));
             lev_env = pk > lev_env ? pk : lev_env * lev_rel;
-            float lev_t = fminf(LEV_MAX, LEV_TARGET / fmaxf(lev_env, 1e-6f));
+            float lev_t = fminf(1.f, LIM_CEIL / fmaxf(lev_env, 1e-6f));
             lev_g += (lev_t - lev_g) * (lev_t < lev_g ? lev_att : lev_slow);
             la_buf[0][la_w] = L;
             la_buf[1][la_w] = R;
@@ -2154,9 +2290,9 @@ void engine_render(int16_t *out, int frames)
             /* for the log */
             stats.rms_acc += 0.5f * (L * L + R * R);
             stats.clips += a > 0.98f;
-            stats.lev_acc += lev_g;
-            if (lev_g < stats.lev_min)
-                stats.lev_min = lev_g;
+            stats.lev_acc += agc_g * lev_g;
+            if (agc_g * lev_g < stats.lev_min)
+                stats.lev_min = agc_g * lev_g;
             /* to 16 bits with triangular dither, rounded: quiet tails fade
              * into soft noise instead of grainy steps */
             out[2 * n] = (int16_t)lrintf(L * 32000.f + frand() - frand());
@@ -2196,7 +2332,7 @@ void engine_render(int16_t *out, int frames)
         String *st = &str[s];
         stats.f_target[s] = st->f_sound;
         stats.meter[s] = live.meter[s];
-        stats.breath[s] = song.gp[GP_ENGINE] == ENG_WIND ? st->pr : fmaxf(st->bow_env, st->hand_env);
+        stats.breath[s] = engine_voice_wind(s) ? st->pr : fmaxf(st->bow_env, st->hand_env);
         stats.corr[s] = st->corr > 0.f ? st->corr : 1.f;
     }
 
@@ -2206,6 +2342,8 @@ void engine_init(int sample_rate)
 {
     sr = (float)sample_rate;
     memset(str, 0, sizeof str);
+    for (int s = 0; s < NS; s++)
+        str[s].art_t = -1.f; /* no tongued note yet */
     bpm_f = (float)song.gp[GP_BPM];
     for (int s = 0; s < NS; s++)
         str[s].bow_open = 1, str[s].bow_env = 1.f;
@@ -2216,6 +2354,8 @@ void engine_init(int sample_rate)
     bridge = bridge_x1 = bridge_hp = 0.f;
     lev_env = 0.f;
     lev_g = 1.f;
+    agc_ms = 0.f;
+    agc_g = 4.f;
     memset(la_buf, 0, sizeof la_buf);
     memset(body_ic, 0, sizeof body_ic);
     memset(sy, 0, sizeof sy);
@@ -2282,11 +2422,27 @@ static void from_v7(Song *s, const SongV7 *o)
     neutral_v03(s);
 }
 
+static void from_v12(Song *s, const SongV12 *o)
+{
+    fill_default(s);
+    memcpy(s->on, o->on, sizeof s->on);
+    for (int i = 0; i < NS; i++)
+        memcpy(s->sp[i], o->sp[i], sizeof o->sp[i]);
+    memcpy(s->gp, o->gp, sizeof s->gp);
+    memcpy(s->lfo, o->lfo, sizeof s->lfo);
+    memcpy(s->fx, o->fx, sizeof s->fx);
+    s->prog_n = o->prog_n, s->prog_pos = o->prog_pos;
+    memcpy(s->prog_note, o->prog_note, sizeof s->prog_note);
+    memcpy(s->prog_fine, o->prog_fine, sizeof s->prog_fine);
+    memcpy(s->prog_name, o->prog_name, sizeof s->prog_name);
+}
+
 static void from_v10(Song *s, const SongV10 *o)
 {
     fill_default(s); /* the new globals take their defaults; no progression kept */
     memcpy(s->on, o->on, sizeof s->on);
-    memcpy(s->sp, o->sp, sizeof s->sp);
+    for (int i = 0; i < NS; i++)
+        memcpy(s->sp[i], o->sp[i], sizeof o->sp[i]);
     memcpy(s->gp, o->gp, sizeof o->gp);
     memcpy(s->lfo, o->lfo, sizeof s->lfo);
     memcpy(s->fx, o->fx, sizeof s->fx);
@@ -2294,9 +2450,10 @@ static void from_v10(Song *s, const SongV10 *o)
 
 static void from_v8(Song *s, const SongV8 *o)
 {
-    fill_default(s); /* ENGINE: STRINGS */
+    fill_default(s); /* every voice a string */
     memcpy(s->on, o->on, sizeof s->on);
-    memcpy(s->sp, o->sp, sizeof s->sp);
+    for (int i = 0; i < NS; i++)
+        memcpy(s->sp[i], o->sp[i], sizeof o->sp[i]);
     memcpy(s->gp, o->gp, sizeof o->gp);
     memcpy(s->lfo, o->lfo, sizeof s->lfo);
     memcpy(s->fx, o->fx, sizeof s->fx);
@@ -2403,6 +2560,7 @@ static int song_read(const char *path, Song *out)
     Song s;
     SongV5 o;
     SongV10 o10;
+    SongV12 o12;
     SongV6 o6;
     SongV7 o7;
     SongV8 o8;
@@ -2414,6 +2572,10 @@ static int song_read(const char *path, Song *out)
         memcpy(&magic, buf, sizeof magic);
     if (magic == SONG_MAGIC && got == sizeof s)
         memcpy(&s, buf, sizeof s);
+    else if ((magic == SONG_MAGIC_V12 || magic == SONG_MAGIC_V11) && got == sizeof o12) {
+        memcpy(&o12, buf, sizeof o12);
+        from_v12(&s, &o12);
+    }
     else if (magic == SONG_MAGIC_V10 && got == sizeof o10) {
         memcpy(&o10, buf, sizeof o10);
         from_v10(&s, &o10);
@@ -2449,6 +2611,17 @@ static int song_read(const char *path, Song *out)
             s.lfo[l][p] = clampi(s.lfo[l][p], lparams[p].min, lparams[p].max);
     for (int p = 0; p < NFX; p++)
         s.fx[p] = clampi(s.fx[p], fparams[p].min, fparams[p].max);
+    if (magic != SONG_MAGIC && magic != SONG_MAGIC_V12) /* the beat was in half hertz before JDR12 */
+        s.fx[FX_BINBEAT] = beat_index(s.fx[FX_BINBEAT] * 0.5f);
+    if (magic != SONG_MAGIC && s.gp[GP_ENGINE] == ENG_WIND) {
+        /* a WIND song from before v0.6: every voice takes the exciter, and
+         * the body the bore's material, as the engine used to */
+        for (int i = 0; i < NS; i++)
+            s.sp[i][SP_VOICE] = 1 + s.gp[GP_EXCITE];
+        int m = s.gp[GP_MATERIAL];
+        s.fx[FX_BTYPE] = m == MAT_WOOD ? BODY_WOOD : BODY_METAL + m - MAT_METAL;
+        s.gp[GP_ENGINE] = ENG_STRINGS;
+    }
     s.prog_n = clampi(s.prog_n, 0, NPROG);
     s.prog_pos = s.prog_n ? clampi(s.prog_pos, 0, s.prog_n - 1) : 0;
     for (int k = 0; k < NPROG; k++) {

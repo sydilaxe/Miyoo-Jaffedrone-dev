@@ -125,8 +125,10 @@ int main(int argc, char **argv)
     if (have_audio) {
         fprintf(stderr, "jaffedrone: audio %d Hz, %d frames/buffer\n", rate, bufsz);
         timing.buffer_us = (uint32_t)(1000000.0 * bufsz / rate);
-        jdlog("audio %d Hz, %d frames a buffer (%.1f ms); engine %s, scale %s", rate, bufsz, timing.buffer_us / 1000.0,
-              song.gp[GP_ENGINE] == ENG_WIND ? "WIND" : "STRINGS", engine_scale_name(song.gp[GP_SCALE]));
+        jdlog("audio %d Hz, %d frames a buffer (%.1f ms); voices %s %s %s %s %s, scale %s", rate, bufsz,
+              timing.buffer_us / 1000.0, engine_voice_name(song.sp[0][SP_VOICE]), engine_voice_name(song.sp[1][SP_VOICE]),
+              engine_voice_name(song.sp[2][SP_VOICE]), engine_voice_name(song.sp[3][SP_VOICE]),
+              engine_voice_name(song.sp[4][SP_VOICE]), engine_scale_name(song.gp[GP_SCALE]));
         ui_lock = lock;
         ui_unlock = unlock;
         SDL_PauseAudio(0);
