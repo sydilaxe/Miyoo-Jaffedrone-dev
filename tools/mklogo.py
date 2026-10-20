@@ -27,6 +27,16 @@ def arc(cx, cy, rx, ry, a0, a1, n=12):
              cy + ry * math.sin(math.radians(a0 + (a1 - a0) * k / n))) for k in range(n + 1)]
 
 
+def sarc(cx, cy, rx, ry, a0, a1, n=16, p=2.5):
+    """part of a superellipse: a round shape squared toward its box, like the house's boards"""
+    out = []
+    for k in range(n + 1):
+        a = math.radians(a0 + (a1 - a0) * k / n)
+        c, s = math.cos(a), math.sin(a)
+        out.append((cx + rx * math.copysign(abs(c) ** (2 / p), c), cy + ry * math.copysign(abs(s) ** (2 / p), s)))
+    return out
+
+
 def J(w):
     """a flat top bar, the stem, and a round hook whose short spur ends level"""
     r = w / 2
@@ -67,29 +77,30 @@ def E(w):
 
 
 def D(w):
-    rx = w - S * 0.6  # an elliptical bow, about as wide as the other letters
-    return [(0, 0), (w - rx, 0)] + arc(w - rx, H / 2, rx, H / 2, -90, 90, 20)[1:-1] + [(w - rx, H), (0, H)]
+    rx = w * 0.72  # the bow squared toward its box
+    return [(0, 0), (w - rx, 0)] + sarc(w - rx, H / 2, rx, H / 2, -90, 90, 24)[1:-1] + [(w - rx, H), (0, H)]
 
 
 def R(w):
     b = H * 0.56  # the bowl's depth
-    r = b / 2
-    return ([(0, 0), (w - S * 0.3 - r, 0)] + arc(w - S * 0.3 - r, r, r, r, -90, 90, 14)[1:-1]
-            + [(w, H), (w - S * 1.3, H), (S, b + S * 0.35), (S, H), (0, H)])
+    rx = b * 0.5
+    e = w - S * 0.25  # the bowl and the leg end on one line
+    return ([(0, 0), (e - rx, 0)] + sarc(e - rx, b / 2, rx, b / 2, -90, 90, 16)[1:-1]
+            + [(e, H), (e - S * 1.15, H), (S, b + S * 0.35), (S, H), (0, H)])
 
 
 def O(w):
-    return arc(w / 2, H / 2, w / 2, H / 2, 0, 360, 40)[:-1]
+    return sarc(w / 2, H / 2, w / 2, H / 2, 0, 360, 48)[:-1]
 
 
 def N(w):
     return [(0, 0), (S, 0), (w - S, H * 0.62), (w - S, 0), (w, 0), (w, H), (w - S, H), (S, H * 0.38), (S, H), (0, H)]
 
 
-LETTERS = [(J, 62), (A, 74), (F, 52), (F, 52), (E, 48), (D, 54), (R, 62), (O, 60), (N, 66), (E, 48)]
+LETTERS = [(J, 62), (A, 74), (F, 52), (F, 52), (E, 48), (D, 50), (R, 64), (O, 58), (N, 66), (E, 48)]
 # optical spacing after each letter: a round side leaves air of its own, so
 # the gaps beside the O close up
-KERN = [0, 0, 0, 0, 0, 0, -4, -5, 0, 0]
+KERN = [0, 0, 0, 0, 0, 0, -1, -2, 0, 0]
 VALLEY_AFTER = 4  # the roofs meet after the first E
 
 
