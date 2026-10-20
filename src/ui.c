@@ -1429,7 +1429,7 @@ static void draw_splash(uint32_t *fb)
             fb[i] = splash_pal[splash_px[i]];
     else { /* no picture: the two roofs drawn */
         gfx_clear(0x9db4f0);
-        float xy[10] = {0, 17, 346, 221, 640, 74, 640, 480, 0, 480};
+        float xy[10] = {0, 30, 325, 237, 640, 85, 640, 480, 0, 480};
         gfx_poly(xy, 5, 0xdcdcd8);
     }
     draw_logo_a(x, y, h, 1.4f, C_SLATE, C_SLATE_D, 222); /* painted on the boards: they show faintly through */
