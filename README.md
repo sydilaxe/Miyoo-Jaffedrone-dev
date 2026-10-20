@@ -41,7 +41,7 @@ Each string has two Euclidean rings (steps, pulses, rotation) that share one ste
   bow plays continuously.
 
 Each ring can be switched on and off. The rings are meant to be simple and slow, and each string keeps its own.
-You can always pluck or bow a string by hand on top of the rings.
+You can always pluck or bow a string by hand on top of the rings, and mute any string from the PLAY page.
 
 ## Tunings and progressions
 
@@ -104,7 +104,7 @@ The strings are not re-plucked on a change. They keep ringing and slide to the n
 | L2 + X / Y | more / fewer steps |
 | L2 + left / right | rotate the pattern |
 | L2 + up / down | step length longer / shorter |
-| L2 + A | switch the ring on / off |
+| L2 + A | mute / unmute the string (it fades out and in; a red bar marks it) |
 | L2 + B | a new simple pattern |
 | tap L2 | the quiet view |
 | R2 + left / right | previous / next scale |

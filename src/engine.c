@@ -286,8 +286,8 @@ typedef struct {
     float gain;   /* on/off fade */
     float drift, drift_target, drift_t;
     float vis_ph;
-    int burst; /* samples of pluck burst left */
-    float burst_amp;
+    int burst, burst_len; /* pluck: samples of burst left, and its length */
+    float burst_amp, burst_lp;
     float ap[2][2]; /* STIFF: two dispersive allpasses in the loop */
     float midi_cur; /* GLIDE: the pitch slides here toward its target */
     int midi_set;
@@ -315,7 +315,12 @@ static float master_g, play_g;
  * at LEV_TARGET before MASTER */
 #define LEV_MAX 16.f
 #define LEV_TARGET 0.7f
-static float lev_env;
+static float lev_env, lev_g = 1.f;
+/* look-ahead: the leveller sees the sound 3 ms before it is heard, so it
+ * can turn down smoothly ahead of a pluck instead of flattening its front */
+#define LA_MAX 256
+static float la_buf[2][LA_MAX];
+static int la_w;
 static float f_ic1[2], f_ic2[2];
 static float lfo_rand[NLFO];
 static int lfo_cycle[NLFO];
@@ -338,15 +343,20 @@ static int ap_i[2][2];
 
 static float midi_hz(float m) { return 440.f * exp2f((m - 69.f) / 12.f); }
 
+/* a pluck is a short burst of noise into the loop, about one period long
+ * (at most 6 ms), shaped by a raised cosine so it has no hard edges */
 static void string_pluck(String *s, float amp)
 {
-    s->burst = (int)(0.004f * sr);
+    int len = s->D_cur > 8.f ? (int)s->D_cur : (int)(0.004f * sr);
+    if (len > (int)(0.006f * sr))
+        len = (int)(0.006f * sr);
+    s->burst = s->burst_len = len;
     s->burst_amp = amp;
 }
 
 void engine_pluck(int s)
 {
-    if (s >= 0 && s < NS)
+    if (s >= 0 && s < NS && song.on[s])
         string_pluck(&str[s], 0.9f);
 }
 
@@ -784,11 +794,16 @@ void engine_render(int16_t *out, int frames)
     float master_t = m <= 0.8f ? m * m * 1.3f : 0.832f * exp2f((m - 0.8f) * 12.f);
     float play_t = live.playing ? 1.f : 0.f;
     float g_ramp = 1.f / (0.02f * sr);
-    float lev_rel = expf(-1.f / (0.6f * sr));
+    /* the gain comes down within the look-ahead (about 3 time constants)
+     * and climbs back slowly */
+    int la_n = (int)(0.003f * sr) < LA_MAX - 1 ? (int)(0.003f * sr) : LA_MAX - 1;
+    float lev_rel = expf(-1.f / (0.6f * sr)), lev_att = 1.f - expf(-3.f / la_n),
+          lev_slow = 1.f - expf(-1.f / (0.05f * sr));
     float meter[NS] = {0}, mm = 0.f;
     int mono = song.gp[GP_MODE] == MODE_MONO;
     float sps16 = sr * 15.f / bpm_f; /* samples per 16th */
-    float glide_samps = sps16 * glide_div16[song.gp[GP_GLIDE]];
+    /* GLIDE OFF still slides over ~10 ms, so a jump never clicks */
+    float glide_samps = fmaxf(sps16 * glide_div16[song.gp[GP_GLIDE]], 0.01f * sr);
     float dly_target = fminf(sps16 * dly_div16[song.fx[FX_DTIME]], DLY_MAX - 4.f);
     float dly_fb = song.fx[FX_DFB] / 100.f, dly_mix_p = song.fx[FX_DMIX] / 100.f;
     if (dly_time_cur <= 0.f)
@@ -829,7 +844,7 @@ void engine_render(int16_t *out, int frames)
 
     /* static per-string settings for this block */
     float lp_k[NS], rho[NS], bow_amp[NS], bow_col[NS], base_midi[NS], fold_g[NS], stiff_a[NS], pos_f[NS];
-    float buzz_th[NS], buzz_k[NS], bow_k[NS];
+    float buzz_th[NS], buzz_k[NS], bow_k[NS], pk_col[NS], pk_gain[NS];
     const Scale *sc = cur_scale();
     float hand_k = 1.f - expf(-1.f / (0.15f * sr));
     for (int s = 0; s < NS; s++) {
@@ -849,6 +864,8 @@ void engine_render(int16_t *out, int frames)
         rho[s] = 0.85f + 0.14995f * powf(d, 0.35f);
         bow_amp[s] = P[SP_BOW] / 100.f * 0.02f;
         bow_col[s] = 0.05f + 0.5f * P[SP_BRIGHT] / 100.f;
+        pk_col[s] = 0.12f + 0.6f * P[SP_BRIGHT] / 100.f;
+        pk_gain[s] = 1.4f / sqrtf(pk_col[s] / (2.f - pk_col[s])); /* make up the noise lowpass's loss */
         /* BUZZ: a jawari-like bridge; past a threshold the string's swing
          * is squashed, so a strong note buzzes and the buzz blooms and
          * fades as it decays */
@@ -892,7 +909,7 @@ void engine_render(int16_t *out, int frames)
             String *st = &str[s];
             /* portamento: a lag toward the target pitch that settles in
              * about the GLIDE time (4 time constants) */
-            if (!st->midi_set || glide_samps <= 0.f) {
+            if (!st->midi_set) {
                 st->midi_cur = base_midi[s];
                 st->midi_set = 1;
             }
@@ -996,8 +1013,14 @@ void engine_render(int16_t *out, int frames)
                 st->last_y = y * st->gain;
                 br += st->last_y;
                 if (st->burst > 0) {
+                    /* coloured by BRIGHT, windowed, and with less push into
+                     * a string that is already loud, so the loop never
+                     * clips on a pluck */
+                    float ph = 1.f - (float)st->burst / st->burst_len;
+                    float win = 0.5f - 0.5f * cosf(6.2831853f * ph);
+                    st->burst_lp += (fnoise() - st->burst_lp) * pk_col[s];
                     st->burst--;
-                    ex += fnoise() * st->burst_amp * play_g;
+                    ex += st->burst_lp * st->burst_amp * win * play_g * pk_gain[s] * (1.f - 0.6f * fminf(1.f, st->env));
                 }
                 st->buf[st->w] = softclip(fbk + ex);
                 st->w = st->w + 1 < DL_MAX ? st->w + 1 : 0;
@@ -1084,13 +1107,21 @@ void engine_render(int16_t *out, int frames)
             L += wl;
             R += wr;
 
-            /* the bowed drone alone sits some 30 dB under the plucks:
-             * lift it, and duck the plucks instantly instead of clipping */
+            /* the bowed drone alone sits some 30 dB under the plucks: lift
+             * it, and turn the plucks down ahead of time (look-ahead), with a
+             * smooth gain so nothing clips or steps */
             float pk = fmaxf(fabsf(L), fabsf(R));
             lev_env = pk > lev_env ? pk : lev_env * lev_rel;
-            float lev = fminf(LEV_MAX, LEV_TARGET / fmaxf(lev_env, 1e-6f));
-            L *= lev;
-            R *= lev;
+            float lev_t = fminf(LEV_MAX, LEV_TARGET / fmaxf(lev_env, 1e-6f));
+            lev_g += (lev_t - lev_g) * (lev_t < lev_g ? lev_att : lev_slow);
+            la_buf[0][la_w] = L;
+            la_buf[1][la_w] = R;
+            int la_r = la_w - la_n;
+            if (la_r < 0)
+                la_r += LA_MAX;
+            la_w = la_w + 1 < LA_MAX ? la_w + 1 : 0;
+            L = la_buf[0][la_r] * lev_g;
+            R = la_buf[1][la_r] * lev_g;
 
             master_g += (master_t - master_g) * g_ramp;
             L = softclip(L * master_g);
@@ -1130,6 +1161,9 @@ void engine_init(int sample_rate)
     last16 = -1;
     dly_time_cur = 0.f;
     bridge = bridge_x1 = bridge_hp = 0.f;
+    lev_env = 0.f;
+    lev_g = 1.f;
+    memset(la_buf, 0, sizeof la_buf);
     memset(body_ic, 0, sizeof body_ic);
 }
 

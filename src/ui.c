@@ -147,12 +147,10 @@ static void play_action(int b)
         case BTN_RIGHT: ring_edit(3, +1); return;
         case BTN_UP: ring_edit(SP_RATE, +1); return;
         case BTN_DOWN: ring_edit(SP_RATE, -1); return;
-        case BTN_A: {
-            int *on = &song.sp[cur_s][RING_P(ring, 0)];
-            *on = !*on;
-            ring_show();
+        case BTN_A: /* mute or unmute the string (it fades) */
+            song.on[cur_s] = !song.on[cur_s];
+            say("STRING %d %s", cur_s + 1, song.on[cur_s] ? "ON" : "MUTED");
             return;
-        }
         case BTN_B:
             engine_euclid_random(cur_s, ring);
             ring_show();
@@ -462,7 +460,7 @@ static void draw_footer(void)
     };
     const char *h = hints[page];
     if (page == PAGE_PLAY && held[BTN_L2])
-        h = "L2+ X/Y:STEPS <>:ROTATE ^v:RATE A:RING ON/OFF B:NEW RING";
+        h = "L2+ A:MUTE STRING X/Y:STEPS <>:ROTATE ^v:RATE B:NEW RING";
     else if (page == PAGE_PLAY && held[BTN_R2])
         h = "R2+ <>:SCALE ^v:TONE X/Y:COUPLE A/B:BODY";
     gfx_fill(0, FOOTER_Y, SCREEN_W, SCREEN_H - FOOTER_Y, C_PANEL);
@@ -737,6 +735,8 @@ static void draw_play(void)
         engine_degree_name(note, dn, sizeof dn);
         snprintf(nm, sizeof nm, "%d %s", s + 1, dn);
         gfx_text(x + 8, t + drop + 2, nm, on ? col : C_DIM, FONT_SMALL);
+        if (!on) /* muted: a red bar across the header */
+            gfx_fill(x + w - 30, t + drop + 10, 20, 4, C_RED);
         /* the string itself, brighter while bowed by hand */
         int sy = t + drop + 42;
         draw_string(x + 12, x + w - 12, sy, on ? live.meter[s] : 0.f, live.phase[s],

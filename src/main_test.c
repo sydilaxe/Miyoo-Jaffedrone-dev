@@ -439,6 +439,46 @@ int main(int argc, char **argv)
         engine_set_rate(1.0);
     }
 
+    /* pops: in 5 ms windows, the share of energy far above the master
+     * lowpass, which only clipping or steps make; and full-scale samples */
+    {
+        song_default();
+        engine_init(RATE);
+        engine_set_playing(1);
+        int n = 20 * RATE, worst_i = 0, bad = 0, full = 0;
+        double worst = 0;
+        int16_t *p = malloc(sizeof(int16_t) * 2 * n);
+        for (int i = 0; i < n; i += 1024)
+            engine_render(p + 2 * i, n - i < 1024 ? n - i : 1024);
+        for (int w = RATE; w + 240 < n; w += 240) {
+            double e = 0, h = 0;
+            for (int i = w; i < w + 240; i++) {
+                double d = p[2 * i] - 3.0 * p[2 * i - 2] + 3.0 * p[2 * i - 4] - p[2 * i - 6];
+                e += (double)p[2 * i] * p[2 * i];
+                h += d * d;
+            }
+            if (e < 240 * 1e4)
+                continue;
+            if (h / e > worst)
+                worst = h / e, worst_i = w;
+            bad += h / e > 0.05;
+        }
+        for (int i = 0; i < n; i++)
+            full += abs(p[2 * i]) > 31500;
+        printf("pops: worst window %.3f at %.2f s (want < 0.5), %d windows over 0.05, %d full-scale samples (want 0)\n", worst,
+               (double)worst_i / RATE, bad, full);
+        /* mute: string 1 alone, muted, must fade to silence */
+        for (int s = 1; s < NS; s++)
+            song.on[s] = 0;
+        song.fx[FX_DMIX] = song.fx[FX_VSEND] = 0;
+        engine_render(p, RATE);
+        double before = rms_of(p, RATE / 2, RATE / 2);
+        song.on[0] = 0;
+        engine_render(p, RATE / 2);
+        printf("mute: string 1 rms %.0f, 0.4 s after muting %.0f (want 0)\n", before, rms_of(p, RATE * 2 / 5, RATE / 10));
+        free(p);
+    }
+
     /* DSP benchmark: 30 s of the default drone */
     song_default();
     engine_init(RATE);
