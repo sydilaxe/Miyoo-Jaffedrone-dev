@@ -8,3 +8,4 @@ dist/Jaffedrone/jaffedrone_log.txt*
 dist/Jaffedrone/jaffedrone.cfg
 dist/Jaffedrone/preset_*.jds
 __pycache__/
+dist/Jaffedrone/jaffedrone_ui.cfg

@@ -242,6 +242,15 @@ sleep (Jirakittayakorn and Wongsawat 2018), and carriers of about 250–400 Hz (
 [a review](https://pmc.ncbi.nlm.nih.gov/articles/PMC6165862/) and
 [the sleep study](https://www.frontiersin.org/journals/human-neuroscience/articles/10.3389/fnhum.2018.00387/full)).
 
+## Projection
+
+Like the mosaics projected on the Jaffe house's ceiling, a grid of small squares glows faintly behind the
+screens. Each column is a band of the sound's spectrum, from the lowest notes on the left to the highest on
+the right, copper to mint, rising and falling as the drone plays. When binaural is on, the light sways
+between the left and right halves of the screen at the beat, as the two ears hear it, and a soft glow rises
+from the floor with it; a journey can be watched slowing down. START + Y switches it between SOFT, BRIGHT and
+OFF.
+
 ## Sound quality
 
 - Each string reads its delay line with four-point Hermite interpolation. Strings keep their brightness on
@@ -295,6 +304,7 @@ on the shoulder buttons.
 | SELECT | next chord |
 | START (tap) | start / stop the drone |
 | START + L1 / R1 | previous / next page (on SOUND, COMPOSE and MIX, L1 / R1 alone also work) |
+| START + Y | the projection: SOFT, BRIGHT or OFF (remembered) |
 | MENU | exit |
 
 **On SOUND, COMPOSE and MIX:** the d-pad moves to the nearest control in that direction, and Y / X lowers or

@@ -84,7 +84,7 @@ package: miyoo $(APP)/splash.jdi
 	mkdir -p build/sd/App
 	cp -r $(APP) build/sd/App/
 	rm -f build/sd/App/Jaffedrone/*.sav* build/sd/App/Jaffedrone/*.jds build/sd/App/Jaffedrone/log.txt \
-		build/sd/App/Jaffedrone/jaffedrone_log.txt* build/sd/App/Jaffedrone/jaffedrone.cfg
+		build/sd/App/Jaffedrone/jaffedrone_log.txt* build/sd/App/Jaffedrone/jaffedrone.cfg build/sd/App/Jaffedrone/jaffedrone_ui.cfg
 	chmod +x build/sd/App/Jaffedrone/launch.sh build/sd/App/Jaffedrone/jaffedrone
 	cd build/sd && zip -qr ../Jaffedrone-miyoo.zip App
 

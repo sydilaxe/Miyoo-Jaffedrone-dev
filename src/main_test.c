@@ -975,6 +975,51 @@ int main(int argc, char **argv)
             printf("undertones %s SUB %2d: 110 Hz %.0f, 55 Hz %.0f, 36.7 Hz %.0f\n", eng ? "WIND   " : "STRINGS", sub, e[0], e[1], e[2]);
         }
 
+    /* the projection: the spectrum behind the screens, swaying left and
+     * right with a 6 Hz binaural beat; and what drawing it costs */
+    {
+        song_default();
+        engine_init(RATE);
+        engine_set_playing(1);
+        song.fx[FX_BINBEAT] = 16; /* 6 Hz */
+        song.fx[FX_BINDEPTH] = 100;
+        song.fx[FX_BINLOCK] = 0;
+        int16_t buf[2 * 480];
+        for (int i = 0; i < 300; i++) {
+            engine_render(buf, 480);
+            ui_tick(10);
+            if (i % 3 == 0)
+                ui_draw(fb);
+        }
+        shot(out, "proj_left", fb);
+        for (int i = 0; i < 8; i++) { /* about half a beat later */
+            engine_render(buf, 480);
+            ui_tick(10);
+        }
+        shot(out, "proj_right", fb);
+        clock_t c0 = clock();
+        for (int i = 0; i < 100; i++) {
+            ui_tick(33);
+            ui_draw(fb);
+        }
+        double ms = (double)(clock() - c0) / CLOCKS_PER_SEC * 10.0;
+        ui_button(BTN_START, 1); /* START + Y twice: SOFT -> BRIGHT -> OFF */
+        press(BTN_Y);
+        press(BTN_Y);
+        ui_button(BTN_START, 0);
+        c0 = clock();
+        for (int i = 0; i < 100; i++) {
+            ui_tick(33);
+            ui_draw(fb);
+        }
+        double ms_off = (double)(clock() - c0) / CLOCKS_PER_SEC * 10.0;
+        ui_button(BTN_START, 1); /* and back to SOFT */
+        press(BTN_Y);
+        ui_button(BTN_START, 0);
+        song.fx[FX_BINBEAT] = 0;
+        printf("projection: a frame drawn in %.2f ms with it, %.2f ms without (host); binaural %.2f Hz, playing %d\n", ms,
+               ms_off, live.bin_hz, live.playing);
+    }
     /* presets: save YAMAN to slot 3, change, load it back, peek, clear */
     {
         char p3[512];
