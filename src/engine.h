@@ -8,7 +8,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define JD_VERSION "0.6.0"
+#define JD_VERSION "0.7.0"
 
 #define NS 5
 #define NSP 25 /* params per string */
@@ -72,6 +72,10 @@ enum { LP_RATE, LP_SHAPE, LP_TARGET, LP_DEPTH };
  * ears. BEAT in half hertz (0 = off), DEPTH, LOCK (beat locked to tempo). */
 enum { FX_DTIME, FX_DFB, FX_DMIX, FX_VSEND, FX_VTIME, FX_VTONE, FX_BINBEAT, FX_BINDEPTH, FX_BINLOCK, FX_SYMP, FX_BODY,
        FX_BTYPE, FX_SCOUNT, FX_STUNE, FX_SOCT, FX_SLEVEL, FX_SRING };
+/* FX_BINLOCK (MODE): FREE, TEMPO (locked to the beat), two journeys, and
+ * OMBAK, the beat played in the air for both ears, as Balinese paired
+ * instruments beat (pengumbang and pengisep) */
+enum { BIN_FREE, BIN_TEMPO, BIN_AT, BIN_TD, BIN_OMBAK, NBINMODE };
 enum { STUNE_SCALE, STUNE_CHORD, STUNE_CHORD9, STUNE_DRONE, STUNE_FIFTHS, NSTUNE };
 /* body TYPE: METAL, CERAMIC and GLASS are the bore materials as a body */
 enum { BODY_WOOD, BODY_GOURD, BODY_BRONZE, BODY_TUNED, BODY_METAL, BODY_CERAMIC, BODY_GLASS, NBODY };

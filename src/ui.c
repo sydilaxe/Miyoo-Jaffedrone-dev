@@ -1551,6 +1551,26 @@ static void pj_analyse(float dt)
     }
 }
 
+/* light: scale a colour by v (0 .. 1) */
+static uint32_t pj_light(uint32_t c, float v)
+{
+    return (uint32_t)((c >> 16 & 255) * v) << 16 | (uint32_t)((c >> 8 & 255) * v) << 8 | (uint32_t)((c & 255) * v);
+}
+
+/* a projector beam from a top corner, falling toward the middle of the
+ * floor, drawn on every other line like light through haze */
+static void pj_beam(int left, int y0, int y1, float v, uint32_t col)
+{
+    if (v < 0.01f)
+        return;
+    for (int y = y0 + 1; y < y1; y += 2) {
+        float t = (float)(y - y0) / (y1 - y0); /* 0 at the lens, 1 on the floor */
+        float near = SCREEN_W * (0.02f + 0.30f * t), far = SCREEN_W * (0.10f + 0.48f * t);
+        int xa = (int)(left ? near : SCREEN_W - far), xb = (int)(left ? far : SCREEN_W - near);
+        gfx_add(xa, y, xb - xa, 1, pj_light(col, v * (1.f - 0.75f * t)));
+    }
+}
+
 static void draw_projection(int y0, int y1)
 {
     if (!pj_loaded)
@@ -1562,23 +1582,36 @@ static void draw_projection(int y0, int y1)
     pj_analyse(fminf(dt, 0.2f));
     float str = pj_mode == PJ_BRIGHT ? 0.26f : 0.14f;
     float d = song.fx[FX_BINBEAT] ? song.fx[FX_BINDEPTH] / 100.f : 0.f;
-    pj_ph = fmodf(pj_ph + 6.2831853f * live.bin_hz * dt, 6.2831853f);
+    int ombak = song.fx[FX_BINLOCK] == BIN_OMBAK;
+    pj_ph = fmodf(pj_ph + 3.1415927f * live.bin_hz * dt, 6.2831853f); /* half the beat: the shift each ear gets */
     float sway = cosf(pj_ph);
-    int r0 = (y0 + PJ_CELL - 1) / PJ_CELL, r1 = y1 / PJ_CELL, nr = r1 - r0;
+    /* the beat: two beams from the top corners, trading at the beat; with
+     * OMBAK they swell and fade together */
+    if (d > 0.f) {
+        float l = ombak ? fabsf(sway) : 0.5f + 0.5f * sway, r = ombak ? l : 1.f - l;
+        pj_beam(1, y0, y1, str * 0.7f * d * l, C_SAND);
+        pj_beam(0, y0, y1, str * 0.7f * d * r, C_SAND);
+    }
+    /* the spectrum as siding boards, each pair's tops sloping into a valley
+     * like the house's two roofs, a brighter trim along each roof edge */
+    int floor_y = y1, room = y1 - y0;
     for (int c = 0; c < PJ_COLS; c++) {
-        float u = (c + 0.5f) / PJ_COLS, side = sway * (1.f - 2.f * u); /* +1: this side is lit */
-        float gain = 1.f + 0.9f * d * side, field = d * 0.3f * (0.5f + 0.5f * side);
-        float h = pj_lev[c] * nr * 0.75f;
+        float u = (c + 0.5f) / PJ_COLS;
+        float side = ombak ? 2.f * fabsf(sway) - 1.f : sway * (1.f - 2.f * u);
+        float gain = 1.f + 0.6f * d * side;
+        float h = pj_lev[c] * room * 0.75f;
+        if (h < 3.f)
+            continue;
         uint32_t col = gfx_mix(C_COPPER, C_SEA, u);
-        for (int k = 0; k < nr; k++) {
-            float a = k + 1 <= h ? (k + 2 > h ? 1.f : 0.7f) : k < h ? h - k : 0.f; /* the top square brightest */
-            float low = 1.f - (float)k / nr, pool = field * low * low * low; /* the beat's glow rises from the floor */
-            float v = (0.85f * a + pool) * gain * str;
-            if (v < 0.012f)
+        uint32_t body = pj_light(col, 0.5f * gain * str), trim = pj_light(col, 1.1f * gain * str);
+        int x0 = c * PJ_CELL + 1, w = PJ_CELL - 2, down = c & 1 ? -1 : 1; /* left board falls right, right falls left */
+        for (int i = 0; i < w; i++) {
+            int dip = (int)((down > 0 ? i : w - 1 - i) * 0.9f); /* the shed roof's slope */
+            int top = floor_y - (int)h + dip;
+            if (top >= floor_y - 2)
                 continue;
-            uint32_t lc = (uint32_t)((col >> 16 & 255) * v) << 16 | (uint32_t)((col >> 8 & 255) * v) << 8 |
-                          (uint32_t)((col & 255) * v);
-            gfx_add(c * PJ_CELL + 1, (r1 - 1 - k) * PJ_CELL + 1, PJ_CELL - 2, PJ_CELL - 2, lc);
+            gfx_add(x0 + i, top, 1, 2, trim);
+            gfx_add(x0 + i, top + 2, 1, floor_y - top - 2, body);
         }
     }
 }

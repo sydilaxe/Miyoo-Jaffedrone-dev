@@ -716,6 +716,75 @@ int main(int argc, char **argv)
         printf("binaural %.1f Hz: L/R correlation flips %.1f per s (want about %.1f)\n", beat_want[k], flips / (double)secs8,
                beat_want[k] * 2);
     }
+    /* OMBAK: both ears beat together (no flips between them), and the low
+     * end swells and fades at the beat rate, 4 Hz here */
+    {
+        song_default();
+        engine_init(RATE);
+        engine_set_playing(1);
+        song.gp[GP_CHANGES] = 0;
+        song.fx[FX_SCOUNT] = 0;
+        song.fx[FX_DMIX] = song.fx[FX_VSEND] = 0;
+        song.fx[FX_BINBEAT] = 12; /* 4 Hz */
+        song.fx[FX_BINLOCK] = BIN_OMBAK;
+        song.lfo[0][LP_DEPTH] = 0;
+        song.gp[GP_DRIFT] = 0;
+        for (int s = 0; s < NS; s++)
+            song.on[s] = s == 2, song.sp[s][SP_PON] = 0, song.sp[s][SP_PAN] = 0;
+        engine_render(pcm, RATE * 2);
+        engine_render(pcm, RATE * 4);
+        float a0 = 0, a1 = 0, b0 = 0, b1 = 0, lk = 1.f - expf(-6.2831853f * 600.f / RATE);
+        static float env[RATE * 4 / 240];
+        int flips = 0, prev = 0, ne = 0;
+        double c = 0, e = 0;
+        for (int i = 0; i < RATE * 4; i++) {
+            a0 += (pcm[2 * i] - a0) * lk, a1 += (a0 - a1) * lk;
+            b0 += (pcm[2 * i + 1] - b0) * lk, b1 += (b0 - b1) * lk;
+            c += (double)a1 * b1;
+            e += (double)a1 * a1;
+            if ((i + 1) % 240 == 0) { /* 5 ms windows */
+                int sg = c > 0 ? 1 : -1;
+                if (prev && sg != prev && fabs(c) > 1e3)
+                    flips++;
+                prev = sg;
+                env[ne++] = (float)sqrt(e / 240);
+                c = e = 0;
+            }
+        }
+        /* the swell's period: where the envelope best matches itself, 1.3 .. 20 Hz */
+        double mean = 0;
+        for (int i = 0; i < ne; i++)
+            mean += env[i] / ne;
+        int best = 0;
+        double bestc = -1e30;
+        for (int lag = 10; lag < 150; lag++) {
+            double cc = 0;
+            for (int i = 0; i + lag < ne; i++)
+                cc += (env[i] - mean) * (env[i + lag] - mean);
+            cc /= ne - lag;
+            if (cc > bestc)
+                bestc = cc, best = lag;
+        }
+        double swell_hz = best ? RATE / 240.0 / best : 0;
+        printf("ombak 4 Hz: L/R flips %d (want 0), swells %.1f per s (want about 4)\n", flips, swell_hz);
+    }
+    /* the Balinese gong kebyar profiles: each degree where Toth put it */
+    {
+        static const char *const bal[3] = {"BEGBEG", "SEDANG", "TIRUS"};
+        static const float want[3][5] = {{0, 120, 234, 666, 747}, {0, 136, 291, 670, 804}, {0, 197, 377, 724, 828}};
+        int ok = 0;
+        song_default();
+        for (int b = 0; b < 3; b++)
+            for (int sc = 0; sc < engine_nscales(); sc++)
+                if (!strcmp(engine_scale_name(sc), bal[b])) {
+                    engine_set_scale(sc);
+                    int good = engine_scale_n() == 5;
+                    for (int i = 0; i < 5 && good; i++)
+                        good = fabsf(engine_scale_cents(i) - want[b][i]) < 0.5f;
+                    ok += good;
+                }
+        printf("balinese tunings: %d/3 profiles in place\n", ok);
+    }
     /* a journey starts from alpha: ALPHA to THETA begins at 10 Hz */
     song_default();
     engine_init(RATE);
@@ -920,6 +989,8 @@ int main(int argc, char **argv)
                     double c = 1200 * log2(hz_yin(pcm, RATE / 4, RATE / 4) / want);
                     tot++;
                     ok += fabs(c) < 25;
+                    if (fabs(c) >= 25 && getenv("JD_DEBUG"))
+                        printf("  off: %s mat %d note %d: %+.0f c\n", exn[ex], mat, note, c);
                     if (fabs(c) > fabs(worst))
                         worst = c;
                     lvl += rms_of(pcm, 0, RATE) / 12;

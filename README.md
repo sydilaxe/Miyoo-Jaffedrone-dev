@@ -145,6 +145,23 @@ scale above the root.
 | PENTA JUST, SEPTIMAL | just pentatonics (5-limit, and 7-limit with 7/6 and 7/4) | the same |
 | YAMAN, BHAIRAV, KAFI, BHUPALI, MALKAUNS | ragas in just (shruti) ratios | a tanpura below (Sa and Pa, or Ma for Malkauns); the upper strings wander a step or two at a time |
 | SLENDRO, PELOG, SELISIR | Javanese and Balinese gamelan tunings | a gong tone, a kempyung pair and a beating unison pair (ombak) move in parallel |
+| BEGBEG, SEDANG, TIRUS | Balinese gong kebyar (see below) | the same as the gamelan tunings |
+
+**Balinese tunings.** No two Balinese gamelan are tuned alike, but gong kebyar tunings fall along a range
+that Andrew Toth described from measuring every key of 49 gamelan across Bali. Three profiles mark it, in cents
+above ding (as reproduced by Vitale and Sethares,
+[Balinese Gamelan Tuning: The Toth Archives](https://iftawm.org/journal/oldsite/articles/2021b/Vitale_Sethares_AAWM_Vol_9_2.pdf)):
+
+| | ding | dong | deng | dung | dang |
+|---|---|---|---|---|---|
+| BEGBEG | 0 | 120 | 234 | 666 | 747 |
+| SEDANG | 0 | 136 | 291 | 670 | 804 |
+| TIRUS | 0 | 197 | 377 | 724 | 828 |
+
+BEGBEG has the closest small steps and the widest gaps; over the 20th century many gamelan were retuned
+toward it. TIRUS is the older, more even shape, and SEDANG lies between. Balinese instruments are also
+played in pairs tuned a few hertz apart (pengumbang and pengisep), whose beating, *ombak*, gives the
+shimmer: Toth's gamelan beat at about 6 to 10 Hz. Binaural MODE OMBAK plays that beat for both ears.
 
 How the chord progressions move, and the COMPOSE controls that shape them:
 
@@ -233,6 +250,9 @@ hundred hertz and not at all above about 1 kHz, so the highs are left as they ar
     rhythm.
   - **A>T 10M:** a journey from alpha (10 Hz) down to theta (6 Hz) over ten minutes.
   - **T>D 15M:** from theta (6 Hz) down to delta (2.5 Hz) over fifteen minutes.
+  - **OMBAK:** both ears hear the same beat, as a Balinese gamelan's paired instruments beat in the air:
+    the low end swells and fades at the BEAT rate, and it works on the speaker without headphones. 6 to
+    10 Hz is the gamelan's range.
 
   Journeys count only while the drone plays.
 
@@ -244,12 +264,17 @@ sleep (Jirakittayakorn and Wongsawat 2018), and carriers of about 250–400 Hz (
 
 ## Projection
 
-Like the mosaics projected on the Jaffe house's ceiling, a grid of small squares glows faintly behind the
-screens. Each column is a band of the sound's spectrum, from the lowest notes on the left to the highest on
-the right, copper to mint, rising and falling as the drone plays. When binaural is on, the light sways
-between the left and right halves of the screen at the beat, as the two ears hear it, and a soft glow rises
-from the floor with it; a journey can be watched slowing down. START + Y switches it between SOFT, BRIGHT and
-OFF.
+Like the light projected across the Jaffe house's ceiling at night, a faint projection glows behind the
+screens, drawn in the house's shapes:
+
+- **The spectrum as siding:** each band of the sound is a vertical board, from the lowest notes on the left
+  to the highest on the right, copper to mint, rising and falling as the drone plays. Each pair of boards'
+  tops slope into a valley like the house's two shed roofs, with a brighter trim along each roof edge.
+- **The beat as projector beams:** when binaural is on, two beams fall from the top corners, like the
+  projectors' beams through the room, and trade left and right at the beat, as the two ears hear it; a
+  journey can be watched slowing down. With OMBAK they swell and fade together.
+
+START + Y switches it between SOFT, BRIGHT and OFF.
 
 ## Sound quality
 
@@ -267,6 +292,9 @@ OFF.
 - Every delay position is kept within its buffer: a float can't count samples past 2^24 (5.8 minutes) to the
   sample, and that once made the delay click in long sessions.
 - Denormal numbers are flushed to zero in the audio thread, so long tails stay cheap on the ARM chip.
+- The inner loops avoid library calls: `fmaxf` and `fminf` (calls on the Cortex-A7) are plain compares, the
+  wind voices' vibrato, free reed and breath curve use fast polynomial sine and exponential, and the reverb's
+  unmodulated lines read at whole samples. About 15% less work than v0.6 on the host.
 
 ## Controls
 
@@ -379,5 +407,5 @@ Every push runs the **build** workflow:
   `test-output`.
 
 To publish a release with the zip attached, go to **Actions → build → Run workflow** and fill in a tag such as
-`v0.6.0`. Pushing a `v*` tag, or creating a release on the website, does the same. The release text comes from
+`v0.7.0`. Pushing a `v*` tag, or creating a release on the website, does the same. The release text comes from
 `.github/release-notes.md`.

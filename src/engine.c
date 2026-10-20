@@ -5,6 +5,43 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* fmaxf / fminf are library calls on the Cortex-A7 (no VMAXNM before
+ * ARMv8) and on x86 without fast-math: plain compares are much cheaper */
+static inline float jd_maxf(float a, float b) { return a > b ? a : b; }
+static inline float jd_minf(float a, float b) { return a < b ? a : b; }
+#define fmaxf jd_maxf
+#define fminf jd_minf
+
+/* sin(2 pi t) for t in [0, 1), within 1e-6: folded to a quarter wave, then
+ * a minimax odd polynomial */
+static inline float sin01(float t)
+{
+    float x = 6.2831853f * (t < 0.5f ? t : t - 1.f); /* -pi .. pi */
+    if (x > 1.5707963f)
+        x = 3.1415927f - x;
+    else if (x < -1.5707963f)
+        x = -3.1415927f - x;
+    float x2 = x * x;
+    return x * (0.99999660f + x2 * (-0.16664824f + x2 * (0.00830629f - 0.00018363f * x2)));
+}
+
+/* e^x for x <= 0, within about 2e-5 relative: 2^(x log2 e), the integer
+ * part into the exponent bits and a polynomial for the fraction */
+static inline float exp_neg(float x)
+{
+    float y = x * 1.4426950f;
+    if (y < -126.f)
+        return 0.f;
+    float fi = (float)(int)y;
+    if (fi > y)
+        fi -= 1.f;
+    float f = y - fi; /* 0 .. 1 */
+    float p = 1.f + f * (0.69314718f + f * (0.24022650f + f * (0.05550411f + f * (0.00961813f + f * 0.00133336f))));
+    union { float f; int32_t i; } u = {p};
+    u.i += (int32_t)fi << 23;
+    return u.f;
+}
+
 #define SONG_MAGIC 0x4a44520du    /* JDR13: each voice a string or a wind (v0.6) */
 #define SONG_MAGIC_V12 0x4a44520cu /* JDR12: binaural beats as a table index (0.1 .. 40 Hz), journeys */
 #define SONG_MAGIC_V11 0x4a44520bu /* JDR11: drone attack/release, key lock, modes, progression memory (v0.5) */
@@ -134,7 +171,7 @@ typedef struct {
 /* just ratios in cents: 16/15 111.73, 9/8 203.91, 7/6 266.87, 6/5 315.64,
  * 5/4 386.31, 4/3 498.04, 11/8 551.32, 45/32 590.22, 3/2 701.96, 8/5 813.69,
  * 13/8 840.53, 5/3 884.36, 27/16 905.87, 7/4 968.83, 9/5 1017.60, 15/8 1088.27 */
-#define NSCALE 14
+#define NSCALE 17
 static const Scale scales[NSCALE] = {
     {"EQUAL", 12, {0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100}, ST_CHORD, {0}, 7, {0, 2, 3, 5, 7, 9, 10}},
     {"JUST MAJOR", 7, {0, 203.91f, 386.31f, 498.04f, 701.96f, 884.36f, 1088.27f}, ST_CHORD, {0}, 0, {0}},
@@ -153,6 +190,12 @@ static const Scale scales[NSCALE] = {
     {"SLENDRO", 5, {0, 231, 474, 717, 955}, ST_GAMELAN, {"ji", "ro", "lu", "mo", "nem"}, 0, {0}},
     {"PELOG", 7, {0, 120, 270, 540, 670, 785, 950}, ST_GAMELAN, {"ji", "ro", "lu", "pat", "mo", "nem", "pi"}, 0, {0}},
     {"SELISIR", 5, {0, 128, 262, 668, 792}, ST_GAMELAN, {"ding", "dong", "deng", "dung", "dang"}, 0, {0}},
+    /* Balinese gong kebyar: Toth's three tuning profiles from 49 gamelan
+     * (as reproduced by Vitale and Sethares 2021), from the close small
+     * steps of BEGBEG to the wide ones of TIRUS */
+    {"BEGBEG", 5, {0, 120, 234, 666, 747}, ST_GAMELAN, {"ding", "dong", "deng", "dung", "dang"}, 0, {0}},
+    {"SEDANG", 5, {0, 136, 291, 670, 804}, ST_GAMELAN, {"ding", "dong", "deng", "dung", "dang"}, 0, {0}},
+    {"TIRUS", 5, {0, 197, 377, 724, 828}, ST_GAMELAN, {"ding", "dong", "deng", "dung", "dang"}, 0, {0}},
 };
 
 static const ParamDef sparams[NSP] = {
@@ -175,7 +218,7 @@ static const ParamDef gparams[NGP] = {{"VOICING", 0, 1},   {"SCALE", 0, NSCALE -
 static const ParamDef lparams[NLP] = {{"RATE", 0, 6}, {"SHAPE", 0, NSH - 1}, {"TARGET", 0, NLT - 1}, {"DEPTH", 0, 100}};
 static const ParamDef fparams[NFX] = {{"TIME", 0, 7},   {"FEEDBK", 0, 95}, {"MIX", 0, 100},
                                       {"SEND", 0, 100}, {"TIME", 0, 100},  {"TONE", 0, 100},
-                                      {"BEAT", 0, NBEAT - 1}, {"DEPTH", 0, 100}, {"MODE", 0, 3},
+                                      {"BEAT", 0, NBEAT - 1}, {"DEPTH", 0, 100}, {"MODE", 0, NBINMODE - 1},
                                       {"COUPLE", 0, 100}, {"BODY", 0, 100}, {"TYPE", 0, NBODY - 1},
                                       {"SYMP", 0, NSYMP}, {"S TUNE", 0, NSTUNE - 1}, {"S OCT", -1, 2},
                                       {"S LEVEL", 0, 100}, {"S RING", 0, 100}};
@@ -191,7 +234,7 @@ static const char *const body_names[NBODY] = {"WOOD", "GOURD", "BRONZE", "TUNED"
 static const float beat_hz[NBEAT] = {0.f, 0.1f, 0.2f, 0.3f, 0.5f, 0.75f, 1.f, 1.5f, 2.f, 2.5f, 3.f,
                                      3.5f, 4.f, 4.5f, 5.f, 5.5f, 6.f, 6.5f, 7.f, 7.5f, 7.83f, 8.f,
                                      9.f, 10.f, 10.5f, 11.f, 12.f, 14.f, 16.f, 20.f, 25.f, 30.f, 40.f};
-static const char *const binmode_names[4] = {"FREE", "TEMPO", "A>T 10M", "T>D 15M"};
+static const char *const binmode_names[NBINMODE] = {"FREE", "TEMPO", "A>T 10M", "T>D 15M", "OMBAK"};
 static int beat_index(float hz)
 {
     int best = 0;
@@ -558,6 +601,8 @@ static float dly_time_cur, dly_lp[2];
 #define FDN_MAX 4096
 static const int fdn_len48[FDN] = {1123, 1361, 1597, 1801, 2063, 2311, 2621, 2903};
 static float fdn_buf[FDN][FDN_MAX], fdn_lp[FDN];
+static float fdn_lenf[FDN]; /* line lengths at this sample rate */
+static int fdn_leni[FDN];
 static int fdn_w;
 #define NPRE 4
 static float pre_buf[NPRE][1024];
@@ -1236,18 +1281,17 @@ static void reverb_tick(float in, float *outL, float *outR, const float *g, floa
         pre_i[k] = i + 1 < pre_len[k] ? i + 1 : 0;
     }
     float o[FDN], sum = 0.f;
-    float scale = sr / 48000.f;
     for (int l = 0; l < FDN; l++) {
-        float len = fdn_len48[l] * scale;
-        if (l == 0)
-            len += mod;
-        else if (l == 5)
-            len -= mod;
-        float rp = (float)fdn_w - len;
-        while (rp < 0.f)
-            rp += FDN_MAX;
-        int ri = (int)rp, rj = (ri + 1) & (FDN_MAX - 1);
-        float y = fdn_buf[l][ri] + (fdn_buf[l][rj] - fdn_buf[l][ri]) * (rp - ri);
+        float y;
+        if (l == 0 || l == 5) { /* the two wobbling lines read between samples */
+            float rp = (float)fdn_w - (fdn_lenf[l] + (l ? -mod : mod));
+            while (rp < 0.f)
+                rp += FDN_MAX;
+            int ri = (int)rp, rj = (ri + 1) & (FDN_MAX - 1);
+            y = fdn_buf[l][ri] + (fdn_buf[l][rj] - fdn_buf[l][ri]) * (rp - ri);
+        }
+        else /* the rest at whole samples */
+            y = fdn_buf[l][(fdn_w - fdn_leni[l]) & (FDN_MAX - 1)];
         fdn_lp[l] += (y - fdn_lp[l]) * damp;
         o[l] = fdn_lp[l] * g[l];
         sum += o[l];
@@ -1408,12 +1452,12 @@ static void wind_tick(String *st, const WindVoice *v, float inj, float *py, floa
     /* the push comes in quicker than the steady breath settles */
     st->pr += (target - st->pr) * (push > 0.f ? fmaxf(v->att_k, v->art_k) : v->att_k);
     st->vph += v->vib_inc;
-    if (st->vph > 6.2831853f)
-        st->vph -= 6.2831853f;
-    float p = st->pr * (1.f + v->vib * 0.07f * sinf(st->vph));
+    if (st->vph >= 1.f)
+        st->vph -= 1.f;
+    float p = st->pr * (1.f + v->vib * 0.07f * sin01(st->vph));
     st->gr_lp += (fnoise() - st->gr_lp) * 0.004f; /* growl: a slow rasp, rough at a lip attack */
     p *= 1.f + (v->growl + (v->ex == EX_LIP ? 0.5f * atk : 0.f)) * 4.f * st->gr_lp;
-    float bp = v->pmax * (1.f - expf(-2.5f * fmaxf(p, 0.f)));
+    float bp = v->pmax * (1.f - exp_neg(-2.5f * fmaxf(p, 0.f)));
     st->nlp += (fnoise() - st->nlp) * 0.55f;
     bp *= 1.f + st->nlp * v->air * (1.f + 5.f * atk); /* the attack is breathy */
     float ch = 0.f;
@@ -1467,7 +1511,7 @@ static void wind_tick(String *st, const WindVoice *v, float inj, float *py, floa
         st->frph += v->fr_inc;
         if (st->frph >= 1.f)
             st->frph -= 1.f;
-        float r = sinf(6.2831853f * st->frph) + v->fr_th;
+        float r = sin01(st->frph) + v->fr_th;
         float flow = st->fr_amp * (r > 0.f ? r * r : 0.f) - st->fr_amp * 0.4f;
         out = flow * 0.3f + b * 0.6f;
         o = (y + flow * 0.6f) * v->out_g;
@@ -1524,6 +1568,9 @@ static void wind_tick(String *st, const WindVoice *v, float inj, float *py, floa
 
 /* the wind voice's settings for this sub-block (pitch dependent) and its
  * bore length */
+#ifndef REED_DAMP
+#define REED_DAMP 10.f /* the reed loop's corner, in multiples of the note */
+#endif
 static void wind_setup(WindVoice *v, String *st, const int *P, float hz, float sps16, float hand_rel)
 {
     const Material *m = &materials[song.gp[GP_MATERIAL]];
@@ -1537,6 +1584,13 @@ static void wind_setup(WindVoice *v, String *st, const int *P, float hz, float s
     v->air = 0.015f + 0.2f * d * d * d * d; /* breath is never perfectly still */
     float br = P[SP_BRIGHT] / 100.f;
     v->lpk = fminf(0.95f, (0.25f + 0.7f * powf(br, 1.2f)) * m->lp_scale);
+    if (ex == EX_REED && v->reg == 1) {
+        /* a clarinet keeps to its low register unless its register key is
+         * opened: damp the loop above the note so the twelfth can't take
+         * over at the attack */
+        float kc = 1.f - expf(-6.2831853f * REED_DAMP * hz / sr);
+        v->lpk = fminf(v->lpk, kc);
+    }
     v->rho = m->rho;
     v->disp = m->disp;
     v->emb = P[SP_STIFF] / 100.f;
@@ -1548,7 +1602,7 @@ static void wind_setup(WindVoice *v, String *st, const int *P, float hz, float s
     /* a tongued note holds for most of a ring step (0.08 .. 1 s) */
     v->art_hold = fminf(1.f, fmaxf(0.08f, 0.6f * sps16 * rate_div16[P[SP_RATE]] / sr));
     v->art_k = 1.f - expf(-1.f / (0.006f * sr));
-    v->vib_inc = 6.2831853f * (4.6f + 0.3f * (float)(st - str)) / sr;
+    v->vib_inc = (4.6f + 0.3f * (float)(st - str)) / sr; /* cycles a sample */
     static const float pmax[NEXCITE] = {1.0f, 0.95f, 0.8f, 1.25f, 1.0f, 1.1f, 1.2f};
     static const float att[NEXCITE] = {0.015f, 0.02f, 0.02f, 0.012f, 0.04f, 0.01f, 0.015f};
     static const float outg[NEXCITE] = {1.0f, 1.0f, 1.0f, 0.3f, 0.8f, 0.3f, 0.3f};
@@ -1779,7 +1833,7 @@ void engine_render(int16_t *out, int frames)
         bin_mode_was = song.fx[FX_BINLOCK];
         bin_journey_t = 0.0;
     }
-    if (song.fx[FX_BINBEAT] && song.fx[FX_BINLOCK] >= 2) {
+    if (song.fx[FX_BINBEAT] && (song.fx[FX_BINLOCK] == BIN_AT || song.fx[FX_BINLOCK] == BIN_TD)) {
         static const float from[2] = {10.f, 6.f}, to[2] = {6.f, 2.5f}, mins[2] = {10.f, 15.f};
         int j = song.fx[FX_BINLOCK] - 2;
         if (live.playing)
@@ -1796,6 +1850,7 @@ void engine_render(int16_t *out, int frames)
         bin_hz = b;
     }
     live.bin_hz = bin_hz;
+    int ombak = song.fx[FX_BINLOCK] == BIN_OMBAK;
     float bin_dc = cosf(3.14159265f * bin_hz / sr), bin_ds = sinf(3.14159265f * bin_hz / sr); /* half the beat per ear */
     {
         float m = sqrtf(bin_c * bin_c + bin_s * bin_s); /* keep the phasor exactly round */
@@ -1820,7 +1875,11 @@ void engine_render(int16_t *out, int frames)
     int nsy = song.fx[FX_SCOUNT];
     float sy_rho = 0.97f + 0.0295f * sqrtf(song.fx[FX_SRING] / 100.f);
     float sy_gain = nsy ? song.fx[FX_SLEVEL] / 100.f * 2.5f / sqrtf((float)nsy) : 0.f;
-    float sy_drive = 0.02f;
+    float sy_drive = 0.02f, sy_pl[NSYMP], sy_pr[NSYMP];
+    for (int k = 0; k < NSYMP; k++) { /* spread alternately left and right, wider up the set */
+        float pan = (k & 1 ? 1.f : -1.f) * (0.25f + 0.6f * (float)k / NSYMP);
+        sy_pl[k] = 1.f - pan, sy_pr[k] = 1.f + pan;
+    }
     if (nsy)
         symp_tune(sc, nsy);
     for (int s = 0; s < NS; s++) {
@@ -2156,9 +2215,8 @@ void engine_render(int16_t *out, int frames)
                     q->lp += (y - q->lp) * 0.5f;
                     q->buf[q->w] = softclip(q->lp * sy_rho + bridge * sy_drive);
                     q->w = q->w + 1 < SB ? q->w + 1 : 0;
-                    float pan = (k & 1 ? 1.f : -1.f) * (0.25f + 0.6f * (float)k / NSYMP);
-                    sl += y * (1.f - pan);
-                    sr_ += y * (1.f + pan);
+                    sl += y * sy_pl[k];
+                    sr_ += y * sy_pr[k];
                     float a = fabsf(y);
                     if (a > q->peak)
                         q->peak = a;
@@ -2206,7 +2264,9 @@ void engine_render(int16_t *out, int frames)
                     float i_ = hil_chain(lo, hil_a, hil_s[ch][0]);
                     float q_ = hil_d[ch];
                     hil_d[ch] = hil_chain(lo, hil_b, hil_s[ch][1]);
-                    float shifted = ch ? i_ * bin_c - q_ * bin_s : i_ * bin_c + q_ * bin_s;
+                    /* OMBAK: each ear hears both, down and up, so the low end
+                     * beats in the air like a gamelan's paired instruments */
+                    float shifted = ombak ? i_ * bin_c : ch ? i_ * bin_c - q_ * bin_s : i_ * bin_c + q_ * bin_s;
                     x = i_all + (shifted - i_) * bin_mix;
                     if (ch)
                         R = x;
@@ -2344,6 +2404,10 @@ void engine_render(int16_t *out, int frames)
 void engine_init(int sample_rate)
 {
     sr = (float)sample_rate;
+    for (int l = 0; l < FDN; l++) {
+        fdn_lenf[l] = fdn_len48[l] * sr / 48000.f;
+        fdn_leni[l] = (int)lrintf(fdn_lenf[l]);
+    }
     live.rate = sample_rate;
     memset(str, 0, sizeof str);
     for (int s = 0; s < NS; s++)
