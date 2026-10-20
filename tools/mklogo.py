@@ -1,112 +1,185 @@
 #!/usr/bin/env python3
-"""The JAFFEDRONE wordmark, traced from a hand drawing: hollow block letters
-cut by hand, each a single outline without counters, on a baseline that
-drifts down to a last E that drops below the rest.
+"""The JAFFEDRONE wordmark.
 
-Each letter is drawn in its own box (0..100 high) and placed where it sat
-in the drawing. Writes src/logo_data.h (outlines in drawing units) and,
-with a second argument, a preview PNG.
+Block letters after a hand drawing, made clean: every letter is a single
+outline with no counters (a solid D, R and O, an A with no crossbar, cut
+by a tall notch), drawn on one stroke width. The tops follow the Jaffe
+house's roofline: JAFFE and DRONE are two roof planes meeting in a valley
+between E and D, the left one rising higher, over a level baseline. Inside,
+the letters can carry the house's vertical board siding.
+
+Writes src/logo_data.h (outlines in logo units) and, with a second
+argument, a preview PNG of the treatments.
 
 usage: mklogo.py OUT.h [PREVIEW.png]
 """
 import math
 import sys
 
-# paths: M x y, L x y, Q cx cy x y (sampled), E cx cy rx ry (an ellipse)
-LETTERS = [
-    # J: a top bar with a dropped left tip, a stem and a hook
-    ("J", 62, [("M", 8, 3), ("L", 60, 0), ("L", 57, 66), ("Q", 54, 100, 26, 99), ("L", 3, 96), ("L", 2, 80),
-               ("Q", 34, 86, 36, 64), ("L", 39, 18), ("L", 9, 21)]),
-    # A: flat-topped, no crossbar, a tall notch between the feet
-    ("A", 66, [("M", 3, 98), ("L", 25, 3), ("L", 45, 1), ("L", 64, 96), ("L", 44, 98), ("L", 34, 60),
-               ("L", 23, 98)]),
-    # P: a solid bowl with an eye
-    ("P", 52, [("M", 2, 4), ("L", 50, 1), ("L", 52, 50), ("L", 25, 55), ("L", 26, 98), ("L", 4, 97)]),
-    ("F", 50, [("M", 2, 6), ("L", 48, 3), ("L", 48, 26), ("L", 23, 27), ("L", 23, 46), ("L", 40, 45),
-               ("L", 40, 63), ("L", 23, 64), ("L", 25, 98), ("L", 4, 98)]),
-    ("E", 40, [("M", 2, 4), ("L", 38, 2), ("L", 38, 19), ("L", 21, 19), ("L", 21, 40), ("L", 33, 39),
-               ("L", 33, 52), ("L", 21, 52), ("L", 22, 80), ("L", 37, 80), ("L", 37, 98), ("L", 2, 98)]),
-    ("D", 48, [("M", 4, 2), ("L", 12, 2), ("Q", 50, 6, 48, 52), ("Q", 46, 96, 9, 98), ("L", 4, 98)]),
-    ("R", 56, [("M", 2, 4), ("L", 30, 2), ("Q", 57, 4, 53, 30), ("Q", 49, 50, 31, 55), ("L", 55, 85),
-               ("L", 44, 97), ("L", 22, 66), ("L", 23, 98), ("L", 4, 96)]),
-    ("O", 48, [("E", 24, 51, 23, 48)]),
-    ("N", 58, [("M", 2, 8), ("L", 18, 6), ("L", 41, 52), ("L", 40, 4), ("L", 56, 1), ("L", 57, 97),
-               ("L", 43, 96), ("L", 18, 50), ("L", 19, 97), ("L", 4, 97)]),
-    ("E", 42, [("M", 2, 3), ("L", 38, 5), ("L", 38, 20), ("L", 21, 19), ("L", 21, 40), ("L", 34, 41),
-               ("L", 34, 54), ("L", 21, 53), ("L", 22, 80), ("L", 39, 81), ("L", 40, 98), ("L", 3, 96)]),
-]
-# where each letter sat in the drawing: x0, x1, top, bottom, a slight turn (degrees)
-BOXES = [(120, 285, 140, 430, 0), (295, 505, 165, 415, 0), (550, 690, 160, 405, 0), (730, 855, 175, 410, 0),
-         (885, 965, 185, 420, 0), (1025, 1095, 180, 405, 0), (1140, 1280, 210, 410, 0),
-         (1290, 1415, 210, 395, 0), (1475, 1635, 225, 390, -2), (1680, 1790, 235, 460, 3)]
-EYE = (38, 25)  # the dot in the P's bowl, in its box
-X0, Y0 = 120, 140
+H = 100.0  # letter height before the roof
+S = 22.0   # stroke
+GAP = 9.0
+ROOF_L, ROOF_V, ROOF_R = 0.0, 26.0, 10.0  # roof height at the left end, the valley, the right end
 
 
-def path_points(path):
-    pts = []
-    for op in path:
-        if op[0] in "ML":
-            pts.append((op[1], op[2]))
-        elif op[0] == "Q":
-            (px, py), (cx, cy, x, y) = pts[-1], op[1:]
-            for k in range(1, 9):
-                t = k / 8
-                pts.append(((1 - t) ** 2 * px + 2 * (1 - t) * t * cx + t * t * x,
-                            (1 - t) ** 2 * py + 2 * (1 - t) * t * cy + t * t * y))
-        elif op[0] == "E":
-            cx, cy, rx, ry = op[1:]
-            for k in range(28):
-                a = 2 * math.pi * k / 28
-                # a little egg-shaped, fuller below
-                r = ry * (1 + 0.06 * math.sin(a))
-                pts.append((cx + rx * math.cos(a) * (1 + 0.05 * math.sin(a)), cy + r * math.sin(a)))
-    return pts
+def arc(cx, cy, rx, ry, a0, a1, n=12):
+    return [(cx + rx * math.cos(math.radians(a0 + (a1 - a0) * k / n)),
+             cy + ry * math.sin(math.radians(a0 + (a1 - a0) * k / n))) for k in range(n + 1)]
 
 
-def place(pts, w, box):
-    x0, x1, top, bot, turn = box
-    sx, sy = (x1 - x0) / w, (bot - top) / 100
-    cx, cy = (x0 + x1) / 2, (top + bot) / 2
-    c, s = math.cos(math.radians(turn)), math.sin(math.radians(turn))
+def J(w):
+    r = w / 2  # the hook: a half ring under the stem
+    cy = H - r
+    tab = S * 1.45
+    return ([(0, 0), (w, 0)] + arc(r, cy, r, r, 0, 180, 18)[:]
+            + [(0, cy - 12), (S, cy - 12)] + arc(r, cy, r - S, r - S, 180, 0, 14)
+            + [(w - S, S), (S * 0.9, S), (S * 0.9, tab), (0, tab)])
+
+
+def A(w):
+    top = 0.36 * w
+    return [(0, H), ((w - top) / 2, 0), ((w + top) / 2, 0), (w, H), (w / 2 + 0.17 * w, H), (w / 2, H * 0.52),
+            (w / 2 - 0.17 * w, H)]
+
+
+def F(w):
+    m = H * 0.43
+    return [(0, 0), (w, 0), (w, S), (S, S), (S, m), (w * 0.8, m), (w * 0.8, m + S), (S, m + S), (S, H), (0, H)]
+
+
+def E(w):
+    m = (H - S) / 2
+    return [(0, 0), (w, 0), (w, S), (S, S), (S, m), (w * 0.82, m), (w * 0.82, m + S), (S, m + S), (S, H - S),
+            (w, H - S), (w, H), (0, H)]
+
+
+def D(w):
+    r = H / 2
+    return [(0, 0), (w - r, 0)] + arc(w - r, r, r, r, -90, 90, 20)[1:-1] + [(w - r, H), (0, H)]
+
+
+def R(w):
+    b = H * 0.56  # the bowl's depth
+    r = b / 2
+    return ([(0, 0), (w - S * 0.3 - r, 0)] + arc(w - S * 0.3 - r, r, r, r, -90, 90, 14)[1:-1]
+            + [(w, H), (w - S * 1.3, H), (S, b + S * 0.35), (S, H), (0, H)])
+
+
+def O(w):
+    return arc(w / 2, H / 2, w / 2, H / 2, 0, 360, 40)[:-1]
+
+
+def N(w):
+    return [(0, 0), (S, 0), (w - S, H * 0.62), (w - S, 0), (w, 0), (w, H), (w - S, H), (S, H * 0.38), (S, H), (0, H)]
+
+
+LETTERS = [(J, 58), (A, 74), (F, 52), (F, 52), (E, 48), (D, 62), (R, 62), (O, 64), (N, 66), (E, 48)]
+VALLEY_AFTER = 4  # the roofs meet after the first E
+
+
+def layout():
+    x, out = 0.0, []
+    for i, (fn, w) in enumerate(LETTERS):
+        out.append((x, w, fn(w)))
+        x += w + GAP + (GAP * 0.6 if i == VALLEY_AFTER else 0)
+    return out, x - GAP
+
+
+def densify(pts, step=3.0):
     out = []
-    for x, y in pts:
-        X, Y = x0 + x * sx - cx, top + y * sy - cy
-        out.append((round(cx + X * c - Y * s - X0), round(cy + X * s + Y * c - Y0)))
+    for i in range(len(pts)):
+        (x0, y0), (x1, y1) = pts[i], pts[(i + 1) % len(pts)]
+        n = max(1, int(math.hypot(x1 - x0, y1 - y0) / step))
+        out += [(x0 + (x1 - x0) * k / n, y0 + (y1 - y0) * k / n) for k in range(n)]
+    return out
+
+
+def simplify(pts, tol=0.25):
+    """drop points that lie on a straight line between their neighbours"""
+    out = list(pts)
+    changed = True
+    while changed and len(out) > 3:
+        changed = False
+        for i in range(len(out)):
+            a, b, c = out[i - 1], out[i], out[(i + 1) % len(out)]
+            cross = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+            if abs(cross) / max(1e-6, math.hypot(c[0] - a[0], c[1] - a[1])) < tol:
+                del out[i]
+                changed = True
+                break
     return out
 
 
 def main():
-    polys = [place(path_points(p), w, b) for (_, w, p), b in zip(LETTERS, BOXES)]
-    b = BOXES[2]
-    eye = place([EYE], LETTERS[2][1], b)[0]
-    W = max(x for p in polys for x, _ in p) + 1
-    H = max(y for p in polys for _, y in p) + 1
+    letters, W = layout()
+    vx = letters[VALLEY_AFTER][0] + letters[VALLEY_AFTER][1] + GAP * 0.8
+
+    def roof(x):
+        return ROOF_L + (ROOF_V - ROOF_L) * x / vx if x < vx else ROOF_V + (ROOF_R - ROOF_V) * (x - vx) / (W - vx)
+
+    polys = []
+    for x0, w, pts in letters:
+        q = []
+        for x, y in densify(pts):
+            X = x0 + x
+            q.append((X, roof(X) + y / H * (H - roof(X))))  # the top follows the roof, the base stays level
+        polys.append(simplify(q))
+    scale = 4  # store at 4 units per logo unit
     with open(sys.argv[1], "w") as f:
-        f.write("/* generated by tools/mklogo.py: the wordmark as outlines, in drawing units */\n")
-        f.write("#pragma once\n#include <stdint.h>\n")
-        f.write(f"#define LOGO_W {W}\n#define LOGO_H {H}\n#define LOGO_NLETTER {len(polys)}\n")
-        f.write(f"#define LOGO_EYE_X {eye[0]}\n#define LOGO_EYE_Y {eye[1]}\n")
+        f.write("/* generated by tools/mklogo.py: the wordmark as outlines */\n#pragma once\n#include <stdint.h>\n")
+        f.write(f"#define LOGO_W {round(W * scale)}\n#define LOGO_H {round(H * scale)}\n#define LOGO_NLETTER {len(polys)}\n")
+        f.write(f"#define LOGO_VALLEY_X {round(vx * scale)}\n#define LOGO_VALLEY_Y {round(ROOF_V * scale)}\n")
+        f.write(f"#define LOGO_ROOF_L {round(ROOF_L * scale)}\n#define LOGO_ROOF_R {round(ROOF_R * scale)}\n")
         starts, flat = [], []
         for p in polys:
             starts.append(len(flat))
-            flat += p
+            flat += [(round(x * scale), round(y * scale)) for x, y in p]
         starts.append(len(flat))
+        f.write(f"#define LOGO_MAXPT {max(b - a for a, b in zip(starts, starts[1:]))}\n")
         f.write("static const uint16_t logo_start[LOGO_NLETTER + 1] = {" + ", ".join(map(str, starts)) + "};\n")
         f.write("static const int16_t logo_pt[][2] = {\n")
         for i in range(0, len(flat), 8):
             f.write("    " + ", ".join(f"{{{x}, {y}}}" for x, y in flat[i:i + 8]) + ",\n")
         f.write("};\n")
     if len(sys.argv) > 2:
-        from PIL import Image, ImageDraw
-        s = 0.5
-        im = Image.new("RGB", (int(W * s) + 40, int(H * s) + 40), (238, 238, 236))
-        d = ImageDraw.Draw(im)
+        preview(polys, W, vx, roof, sys.argv[2])
+
+
+def preview(polys, W, vx, roof, path):
+    from PIL import Image, ImageDraw
+    k, pad, ss = 3.2, 50, 3  # drawn 3x and scaled down for smooth edges
+    lw, lh = int(W * k + 2 * pad), int(H * k + 2 * pad)
+    themes = [
+        # name, background, outline, fill, groove
+        ("night", (16, 18, 28), (226, 196, 150), (40, 36, 40), (90, 72, 60)),
+        ("cedar", (182, 108, 62), (40, 24, 18), (196, 124, 76), (150, 86, 50)),
+        ("siding", (226, 224, 216), (34, 34, 38), (236, 234, 228), (180, 178, 170)),
+    ]
+    im = Image.new("RGB", (lw * ss, lh * len(themes) * ss))
+    d = ImageDraw.Draw(im)
+    for t, (_, bg, ol, fill, groove) in enumerate(themes):
+        oy = t * lh * ss
+        d.rectangle([0, oy, lw * ss, oy + lh * ss], fill=bg)
+        mask = Image.new("L", im.size, 0)
+        md = ImageDraw.Draw(mask)
         for p in polys:
-            q = [(20 + x * s, 20 + y * s) for x, y in p]
-            d.line(q + [q[0]], fill=(40, 40, 50), width=2)
-        d.ellipse([20 + eye[0] * s - 4, 20 + eye[1] * s - 2, 20 + eye[0] * s + 4, 20 + eye[1] * s + 2], fill=(40, 40, 50))
-        im.save(sys.argv[2])
+            q = [((pad + x * k) * ss, oy + (pad + y * k) * ss) for x, y in p]
+            d.polygon(q, fill=fill)
+            md.polygon(q, fill=255)
+        # the siding: vertical boards inside the letters
+        stripes = Image.new("RGB", im.size, groove)
+        smask = Image.new("L", im.size, 0)
+        sd = ImageDraw.Draw(smask)
+        x = pad * ss
+        while x < (pad + W * k) * ss:
+            sd.rectangle([x, oy, x + 2 * ss - 1, oy + lh * ss], fill=255)
+            x += 7 * k * ss
+        from PIL import ImageChops
+        im.paste(stripes, (0, 0), ImageChops.multiply(mask, smask))
+        for p in polys:
+            q = [((pad + x * k) * ss, oy + (pad + y * k) * ss) for x, y in p]
+            d.line(q + [q[0]], fill=ol, width=int(2.4 * ss * k / 2), joint="curve")
+    im.resize((lw, lh * len(themes)), Image.LANCZOS).save(path)
 
 
 if __name__ == "__main__":

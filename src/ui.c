@@ -150,7 +150,8 @@ void ui_summary(void (*out)(const char *line))
     out(l);
 }
 
-void ui_init(void) {}
+static int splash_ms; /* the start-up screen, until a button or this runs out */
+void ui_init(void) { splash_ms = 2500; }
 int ui_quit_requested(void) { return quit; }
 int ui_take_changed(void)
 {
@@ -634,6 +635,11 @@ void ui_button(int b, int down)
 {
     if (b < 0 || b >= BTN_COUNT || held[b] == down)
         return;
+    if (splash_ms > 0) { /* any press only clears the start-up screen */
+        if (down)
+            splash_ms = 0;
+        return;
+    }
     held[b] = down;
     hold_ms[b] = rep_ms[b] = rep_n[b] = 0;
     if (b == BTN_L2 && down)
@@ -692,6 +698,8 @@ void ui_button(int b, int down)
 void ui_tick(int ms)
 {
     now_ms += ms;
+    if (splash_ms > 0)
+        splash_ms -= ms;
     page_ms[page] += ms;
     if (pend_ms >= 0 && (pend_ms += ms) > 700)
         flush_param();
@@ -845,22 +853,22 @@ static void draw_string(int x0, int x1, int y, float amp, float ph, uint32_t col
 
 /* ---------------------------------------------------------------- pages */
 
-/* the wordmark: hand-cut hollow letters (tools/mklogo.py), h pixels high,
- * a faint fill under a pencil-like outline */
-static void draw_logo(float x, float y, float h, float stroke, uint32_t col, uint32_t fill)
+/* the wordmark (tools/mklogo.py): block letters whose tops follow the
+ * house's two roofs, h pixels high, filled, with board grooves when there is
+ * room for them, under an outline */
+static void draw_logo(float x, float y, float h, float stroke, uint32_t col, uint32_t fill, uint32_t groove)
 {
-    float k = h / LOGO_H, xy[2 * 64];
+    float k = h / LOGO_H, xy[2 * LOGO_MAXPT];
     for (int l = 0; l < LOGO_NLETTER; l++) {
         int a = logo_start[l], n = logo_start[l + 1] - a;
-        for (int i = 0; i < n && i < 64; i++)
+        for (int i = 0; i < n; i++)
             xy[2 * i] = x + logo_pt[a + i][0] * k, xy[2 * i + 1] = y + logo_pt[a + i][1] * k;
-        n = n < 64 ? n : 64;
-        if (fill != col)
-            gfx_poly(xy, n, fill);
+        gfx_poly(xy, n, fill);
+        if (h >= 60.f) /* the siding, a board every 11 units */
+            gfx_poly_grooves(xy, n, groove, 44.f * k, x + 22.f * k);
         for (int i = 0, j = n - 1; i < n; j = i++)
             gfx_line(xy[2 * j], xy[2 * j + 1], xy[2 * i], xy[2 * i + 1], stroke, col);
     }
-    gfx_disc(x + LOGO_EYE_X * k, y + LOGO_EYE_Y * k, fmaxf(1.f, stroke * 0.9f), col); /* the P's eye */
 }
 
 static void draw_header(void)
@@ -868,8 +876,8 @@ static void draw_header(void)
     gfx_fill(0, 0, SCREEN_W, HEADER_H, C_PANEL);
     /* the roofline: one copper edge across the band */
     slant(150, HEADER_H - 3, SCREEN_W, HEADER_H - 16, 3, C_COPPER);
-    draw_logo(7, 6, 32, 1.5f, C_SAND, gfx_mix(C_PANEL, C_SAND, 0.10f));
-    int x = 182;
+    draw_logo(8, 8, 28, 1.25f, C_SAND, gfx_mix(C_PANEL, C_SAND, 0.16f), C_SAND);
+    int x = 204;
     for (int p = 0; p < PAGE_COUNT; p++) {
         int w = gfx_text_w(page_names[p], FONT_SMALL) + 12;
         para(x, 10, w, 24, 6, p == page ? C_COPPER : C_PANEL2);
@@ -1360,10 +1368,31 @@ static void draw_quiet(void)
     gfx_text((SCREEN_W - gfx_text_w(cn, FONT_SMALL)) / 2, SCREEN_H - 34, cn, C_DIM, FONT_SMALL);
 }
 
+/* the start-up screen: the wordmark large, with its board grooves, under
+ * the house's two roofs */
+static void draw_splash(void)
+{
+    float h = 80.f, k = h / LOGO_H, w = LOGO_W * k, x = (SCREEN_W - w) / 2, y = 190.f, lift = 18.f;
+    float lx = x - 34, rx = x + w + 30; /* the eaves reach past the letters */
+    float ly = y - lift + (LOGO_ROOF_L - (LOGO_VALLEY_Y - LOGO_ROOF_L) * 34.f / (LOGO_VALLEY_X * k)) * k;
+    float vx = x + LOGO_VALLEY_X * k, vy = y - lift + LOGO_VALLEY_Y * k;
+    float ry = y - lift + (LOGO_ROOF_R + (LOGO_ROOF_R - LOGO_VALLEY_Y) * 30.f / ((LOGO_W - LOGO_VALLEY_X) * k)) * k;
+    gfx_line(lx, ly, vx, vy, 3.f, C_COPPER);
+    gfx_line(vx, vy, rx, ry, 3.f, C_COPPER);
+    draw_logo(x, y, h, 2.f, C_SAND, gfx_mix(C_BG, C_SAND, 0.10f), gfx_mix(C_BG, C_SAND, 0.24f));
+    char v[24];
+    snprintf(v, sizeof v, "v%s", JD_VERSION);
+    gfx_text((SCREEN_W - gfx_text_w(v, FONT_SMALL)) / 2, (int)(y + h + 26), v, C_DIM, FONT_SMALL);
+}
+
 void ui_draw(uint32_t *fb)
 {
     gfx_target(fb);
     gfx_clear(C_BG);
+    if (splash_ms > 0) {
+        draw_splash();
+        return;
+    }
     if (page == PAGE_PLAY && quiet) {
         draw_quiet();
         draw_toast();

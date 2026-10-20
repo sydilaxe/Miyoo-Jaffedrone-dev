@@ -167,6 +167,9 @@ int main(int argc, char **argv)
     song_default();
     engine_init(RATE);
     engine_set_playing(1);
+    ui_init();
+    shot(out, "splash", fb);
+    press(BTN_A); /* a press clears the start-up screen and does nothing else */
 
     const int secs = 12, chunk = RATE / 100;
     int16_t *pcm = malloc(sizeof(int16_t) * 2 * RATE * secs);
