@@ -2,8 +2,8 @@
  * Each: 20 s of play, then every exciter stops (players muted, bows and
  * breath to zero, rhythms off) and 20 s more. Judged on the voices' own
  * levels (the meters), which the leveller does not touch:
- *   bounded: while playing, the loudest voice with AIR at most RATIO times
- *            its loudest with AIR off (and never NaN)
+ *   bounded: while playing, the voices' average level with AIR at most RATIO
+ *            times without (and never NaN)
  *   decays:  after the stop, the voices' total at 17-20 s no more than at 5-7 s
  *            (beyond what the same voices do without AIR)
  * usage: air_sweep N [seed] */
@@ -13,6 +13,7 @@
 #include <string.h>
 #include "engine.h"
 extern float air_k[3], air_send[3], engine_vout_pk[NS];
+extern int engine_listen, engine_air_mode;
 #define R 48000
 static int16_t pcm[R / 4 * 2];
 static unsigned rs = 1;
@@ -27,7 +28,7 @@ static void setup(const Cfg *c)
         if (c->pan_same) song.sp[s][SP_PAN] = 0;
         if (c->unison) song.sp[s][SP_NOTE] = song.sp[0][SP_NOTE];
         if (c->decay_top) song.sp[s][SP_DECAY] = 100;
-        if (!c->player[s]) { song.sp[s][SP_BOW] = 0; song.sp[s][SP_PON] = song.sp[s][SP_BON] = 0; song.sp[s][SP_DECAY] = 100; }
+        if (!c->player[s]) song.sp[s][SP_DECAY] = 100;
     }
     if (c->symp) { song.fx[FX_SYMP] = fparam_def(FX_SYMP)->max; song.fx[FX_SCOUNT] = fparam_def(FX_SCOUNT)->max; }
 }
@@ -35,7 +36,10 @@ static void setup(const Cfg *c)
 static float run(const Cfg *c, float air, float room, float *after3, float *after10, int *nan)
 {
     setup(c);
-    engine_air = air; engine_room = room;
+    (void)room;
+    song.fx[FX_AIR] = (int)(air * 100.f + 0.5f);
+    for (int s = 0; s < NS; s++)
+        song.sp[s][SP_LISTEN] = !c->player[s]; /* the rest only listen */
     engine_init(R);
     engine_set_playing(1);
     float mx = 0;
@@ -48,7 +52,7 @@ static float run(const Cfg *c, float air, float room, float *after3, float *afte
             if (!(engine_vout_pk[s] == engine_vout_pk[s])) *nan = 1;
             t += engine_vout_pk[s];
         }
-        if (q >= 20 && t > mx) mx = t; /* the loudest moment, all voices together, after the first 5 s */
+        if (q >= 20) mx += t / 60; /* the voices' level, all together, averaged over 5-20 s (a held wall counts, not only peaks) */
     }
     for (int s = 0; s < NS; s++) { /* everything stops being played */
         if (c->player[s]) song.on[s] = 0;
@@ -74,7 +78,7 @@ int main(int argc, char **argv)
     rs = argc > 2 ? (unsigned)atoi(argv[2]) : 1;
     air_k[0] = argc > 3 ? atof(argv[3]) : 1; air_k[1] = 2; air_k[2] = 2;
     air_send[0] = argc > 4 ? atof(argv[4]) : 1; air_send[2] = 0.3f;
-    const float RATIO = 4.f;
+    const float RATIO = 3.f;
     float room_max = argc > 5 ? atof(argv[5]) : 1.f;
     int fails = 0;
     double worst_ratio = 0, worst_growth = 0;
@@ -82,11 +86,12 @@ int main(int argc, char **argv)
     for (int i = 0; i < n; i++) {
         Cfg c;
         memset(&c, 0, sizeof c);
-        int kind = rnd(3); /* 0: everyone plays, 1: one plays, 2: some play */
+        int kind = 1 + rnd(2); /* 1: one plays, 2: some play (at least one) */
         for (int s = 0; s < NS; s++) {
             c.v[s] = rnd(nv);
-            c.player[s] = kind == 0 ? 1 : kind == 1 ? s == 0 : rnd(2);
+            c.player[s] = kind == 1 ? s == 0 : rnd(2);
         }
+        c.player[rnd(NS)] = 1;
         c.pan_same = rnd(3) == 0;
         c.unison = rnd(3) == 0;
         c.symp = rnd(2);

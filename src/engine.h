@@ -11,13 +11,13 @@
 #define JD_VERSION "0.11.3-air"
 
 #define NS 5
-#define NSP 27 /* params per string */
+#define NSP 28 /* params per string */
 #define NGP 28 /* global params */
 #define NPROG 16 /* chords in the progression memory */
 #define NPRESET 10
 #define NLFO 2
 #define NLP 4  /* params per LFO */
-#define NFX 17 /* effect params */
+#define NFX 18 /* effect params */
 #define NSYMP 12 /* most sympathetic strings */
 
 /* SP_NOTE is a scale degree above the root (in EQUAL, a semitone). Each
@@ -26,7 +26,7 @@
  * (off: the bow plays continuously). Ring fields: on, steps, pulses, rotate. */
 enum { SP_NOTE, SP_FINE, SP_LEVEL, SP_BOW, SP_DECAY, SP_BRIGHT, SP_FOLD, SP_STIFF, SP_POS, SP_BUZZ,
        SP_PON, SP_PSTEPS, SP_PPULSES, SP_PROT, SP_BON, SP_BSTEPS, SP_BPULSES, SP_BROT, SP_RATE, SP_PAN,
-       SP_PCHANCE, SP_BCHANCE, SP_HARM, SP_GATE, SP_VOICE, SP_RELEASE, SP_LATK };
+       SP_PCHANCE, SP_BCHANCE, SP_HARM, SP_GATE, SP_VOICE, SP_RELEASE, SP_LATK, SP_LISTEN };
 /* SP_PCHANCE / SP_BCHANCE: the chance each pulse of the ring plays.
  * SP_HARM: a light touch at a node (OFF, or the 2nd .. 5th harmonic).
  * SP_GATE: how far the string's sound follows its own bow ring.
@@ -84,7 +84,7 @@ enum { LP_RATE, LP_SHAPE, LP_TARGET, LP_DEPTH };
  * in the right by half the beat each, so every partial beats between the
  * ears. BEAT in half hertz (0 = off), DEPTH, LOCK (beat locked to tempo). */
 enum { FX_DTIME, FX_DFB, FX_DMIX, FX_VSEND, FX_VTIME, FX_VTONE, FX_BINBEAT, FX_BINDEPTH, FX_BINLOCK, FX_SYMP, FX_BODY,
-       FX_BTYPE, FX_SCOUNT, FX_STUNE, FX_SOCT, FX_SLEVEL, FX_SRING };
+       FX_BTYPE, FX_SCOUNT, FX_STUNE, FX_SOCT, FX_SLEVEL, FX_SRING, FX_AIR };
 /* FX_BINLOCK (MODE): FREE, TEMPO (locked to the beat), two journeys, and
  * OMBAK, the beat played in the air for both ears, as Balinese paired
  * instruments beat (pengumbang and pengisep) */
@@ -155,7 +155,11 @@ int engine_voice_wind(int s);          /* 1 if voice s is a wind voice */
 int engine_voice_perc(int s);          /* 1 if voice s is a struck voice */
 int engine_perc_count(const Song *g);  /* how many voices are struck */
 extern int engine_perc_skip;  /* skip struck modes that have died away (on; off only in tests) */
-extern float engine_air, engine_room; /* AIR prototype: voices hear each other and the room (0 .. 1) */
+extern float engine_air, engine_room; /* AIR prototype: listeners hear the players (0 .. 1); room unused */
+extern int engine_listen;           /* AIR prototype: a bit for each listening voice */
+enum { AIR_LISTEN, AIR_FLOW };
+enum { AIR_SENDS, AIR_LISTENS, AIR_OUT }; /* SP_LISTEN: a voice plays into the air, only listens, or stays out */
+extern int engine_air_mode;         /* AIR prototype: AIR_LISTEN or AIR_FLOW */
 extern int engine_perc_cache; /* keep struck modes between sub-blocks (on; off only in tests) */
 int engine_wind_count(const Song *g);  /* how many voices are winds */
 const char *engine_voice_name(int v);  /* an SP_VOICE value: STRING, LIP .. */

@@ -213,9 +213,11 @@ static const int comp_b[7] = {GP_MOTION, GP_HOME, GP_COLOR, GP_EVOLVE, GP_RELATE
 #define COMP_X 268
 #define COMP_CW 184
 #define LFO_Y 318
-/* MIX: a strip per string, master, then delay, reverb and gate */
-#define MIX_FX_Y 244
-#define MIX_FXC_Y 330
+/* MIX: a strip per string (with AIR: playing or listening), master, then
+ * delay, reverb, binaural and AIR */
+#define MIX_FX_Y 276
+#define MIX_FXC_Y 344
+#define MIX_FXW 160
 
 /* ------------------------------------------------------------- presets
  * Ten slots, each a whole song (sound, rings, tuning, the progression
@@ -331,15 +333,19 @@ static void layout(int pg)
             cell(s * cw + 3, BODY_Y + 42, cw - 6, 31, CK_S, s, SP_LEVEL);
             cell(s * cw + 3, BODY_Y + 76, cw - 6, 31, CK_S, s, SP_PAN);
             cell(s * cw + 3, BODY_Y + 110, cw - 6, 31, CK_S, s, latch_on() ? SP_RELEASE : SP_GATE);
+            cell(s * cw + 3, BODY_Y + 144, cw - 6, 31, CK_S, s, SP_LISTEN);
         }
-        cell(3, BODY_Y + 146, cw - 6, 31, CK_G, 0, GP_MASTER);
-        cell(cw + 3, BODY_Y + 146, cw - 6, 31, CK_F, 0, FX_SLEVEL);
-        cell(2 * cw + 3, BODY_Y + 146, cw - 6, 31, CK_G, 0, GP_SUB);
-        cell(3 * cw + 3, BODY_Y + 146, cw - 6, 31, CK_G, 0, GP_SUBDIV);
-        cell(4 * cw + 3, BODY_Y + 146, cw - 6, 31, CK_G, 0, GP_SUBRES);
+        cell(3, BODY_Y + 180, cw - 6, 31, CK_G, 0, GP_MASTER);
+        cell(cw + 3, BODY_Y + 180, cw - 6, 31, CK_F, 0, FX_SLEVEL);
+        cell(2 * cw + 3, BODY_Y + 180, cw - 6, 31, CK_G, 0, GP_SUB);
+        cell(3 * cw + 3, BODY_Y + 180, cw - 6, 31, CK_G, 0, GP_SUBDIV);
+        cell(4 * cw + 3, BODY_Y + 180, cw - 6, 31, CK_G, 0, GP_SUBRES);
+        /* in the order the sound passes through them: AIR (at the instruments),
+         * then delay, reverb and binaural */
+        cell(4, MIX_FXC_Y, MIX_FXW - 8, 33, CK_F, 0, FX_AIR);
         for (int c = 0; c < 3; c++)
             for (int p = 0; p < 3; p++)
-                cell(c * 213 + 4, MIX_FXC_Y + p * 42, 205, 38, CK_F, 0, c * 3 + p);
+                cell((c + 1) * MIX_FXW + 4, MIX_FXC_Y + p * 36, MIX_FXW - 8, 33, CK_F, 0, c * 3 + p);
         break;
     }
 }
@@ -1341,16 +1347,39 @@ static void draw_mix(void)
         gfx_fill(pp - 1, my - 4, 3, 13, C_TEXT);
     }
     int mm = (int)(628 * fminf(1.f, live.master_meter));
-    gfx_fill(6, BODY_Y + 180, 628, 3, C_PANEL2);
-    gfx_fill(6, BODY_Y + 180, mm, 3, live.master_meter > 0.95f ? C_RED : C_SEA);
+    gfx_fill(6, BODY_Y + 214, 628, 3, C_PANEL2);
+    gfx_fill(6, BODY_Y + 214, mm, 3, live.master_meter > 0.95f ? C_RED : C_SEA);
 
-    static const char *const names[3] = {"DELAY", "REVERB", "BINAURAL"};
-    for (int c = 0; c < 3; c++) {
-        int x = c * 213 + 4, w = 205;
-        uint32_t col = c == 0 ? C_COPPER : c == 1 ? C_SAND : C_SEA;
-        roof(x, MIX_FX_Y + c * 6, w, MIX_FXC_Y - 4 - MIX_FX_Y - c * 6, 6, C_PANEL);
-        gfx_text(x + 10, MIX_FX_Y + c * 6 + 6, names[c], col, FONT_SMALL);
-        int gx = x + 14, gy = MIX_FX_Y + 36, gw = w - 28, gh = 48;
+    /* the panels, left to right: AIR, DELAY, REVERB, BINAURAL (c: which one,
+     * 3 being AIR) */
+    static const char *const names[4] = {"DELAY", "REVERB", "BINAURAL", "AIR"};
+    static const int col_of[4] = {1, 2, 3, 0};
+    for (int c = 0; c < 4; c++) {
+        int k = col_of[c], x = k * MIX_FXW + 4, w = MIX_FXW - 8;
+        uint32_t col = c == 0 ? C_COPPER : c == 1 ? C_SAND : c == 2 ? C_SEA : C_TEXT;
+        roof(x, MIX_FX_Y + k * 3, w, MIX_FXC_Y - 4 - MIX_FX_Y - k * 3, 6, C_PANEL);
+        gfx_text(x + 10, MIX_FX_Y + k * 3 + 3, names[c], col, FONT_SMALL);
+        int gx = x + 12, gy = MIX_FX_Y + 32, gw = w - 24, gh = 26;
+        if (c == 3) { /* the stage: players (discs) sounding to listeners (rings) */
+            float a = song.fx[FX_AIR] / 100.f;
+            for (int s = 0; s < NS; s++)
+                for (int l = 0; l < NS; l++)
+                    if (a > 0.f && song.sp[s][SP_LISTEN] == AIR_SENDS && song.sp[l][SP_LISTEN] == AIR_LISTENS && song.on[s] &&
+                        song.on[l]) {
+                        float x0 = gx + gw * (0.5f + song.sp[s][SP_PAN] / 100.f), x1 = gx + gw * (0.5f + song.sp[l][SP_PAN] / 100.f);
+                        gfx_line(x0, gy + gh * 0.3f, x1, gy + gh * 0.75f, 1.f, gfx_mix(C_PANEL2, scol[s], 0.3f + 0.6f * a));
+                    }
+            for (int s = 0; s < NS; s++) {
+                float px = gx + gw * (0.5f + song.sp[s][SP_PAN] / 100.f);
+                if (song.sp[s][SP_LISTEN] == AIR_LISTENS)
+                    gfx_ring(px, gy + gh * 0.75f, 4.5f, 1.6f, song.on[s] ? scol[s] : C_DIM);
+                else if (song.sp[s][SP_LISTEN] == AIR_SENDS)
+                    gfx_disc(px, gy + gh * 0.3f, 4.5f, song.on[s] ? scol[s] : C_DIM);
+                else /* out of the air */
+                    gfx_fill((int)px - 4, (int)(gy + gh * 0.3f), 8, 2, C_DIM);
+            }
+            continue;
+        }
         if (c == 0) { /* echoes dying away */
             float fb = song.fx[FX_DFB] / 100.f, a = 1.f;
             for (int i = 0; i < 6; i++) {
@@ -1377,7 +1406,7 @@ static void draw_mix(void)
                     py = yy;
                 }
             }
-            gfx_text(x + w - 14 - gfx_text_w(hz > 0.f ? "L  R" : "OFF", FONT_SMALL), MIX_FX_Y + c * 6 + 6,
+            gfx_text(x + w - 14 - gfx_text_w(hz > 0.f ? "L  R" : "OFF", FONT_SMALL), MIX_FX_Y + k * 3 + 3,
                      hz > 0.f ? "L  R" : "OFF", C_DIM, FONT_SMALL);
         }
     }

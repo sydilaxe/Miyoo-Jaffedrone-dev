@@ -1,5 +1,5 @@
 /* AIR ensembles: players play for 14 s, then stop being played (no bow, breath or strikes) and everything rings on
- * for 5 s. Listeners are never bowed, struck or blown. Delay and reverb off.
+ * for 5 s. Listeners (LISTEN) are never bowed, struck or blown. Delay and reverb off.
  * Each file: AIR off, half, full. usage: air_requested OUTDIR */
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,8 +16,9 @@ static void take(const int *v, const int *play, float air){
   song_default();
   song.fx[FX_DMIX]=0; song.fx[FX_VSEND]=0;
   for(int s=0;s<NS;s++){ song.sp[s][SP_VOICE]=v[s];
-    if(!play[s]){ song.sp[s][SP_BOW]=0; song.sp[s][SP_PON]=song.sp[s][SP_BON]=0; song.sp[s][SP_DECAY]=100; } }
-  engine_air=air; engine_room=0; engine_init(R); engine_set_playing(1);
+    if(!play[s]) song.sp[s][SP_DECAY]=100; }
+  for(int s=0;s<NS;s++) song.sp[s][SP_LISTEN] = !play[s];
+  song.fx[FX_AIR]=(int)(air*100.f+0.5f); engine_init(R); engine_set_playing(1);
   for(int i=0;i<19;i++){ if(i==14) for(int s=0;s<NS;s++) if(play[s]){ song.sp[s][SP_BOW]=0; song.sp[s][SP_PON]=song.sp[s][SP_BON]=0; } engine_render(out+2*pos,R); pos+=R; }
   memset(out+2*pos,0,R*2); pos+=R/2;
 }
@@ -28,11 +29,12 @@ static void ens(const char *dir, const char *name, const int *v, const int *play
 #define S(p) VOICE_PERC(PC_##p)
 #define W(e) (1 + EX_##e)
 int main(int argc,char**argv){
-  air_k[0]=1; air_k[1]=2; air_k[2]=2; air_send[2]=0.3f;
   const char *d=argv[1];
   { int v[NS]={W(FLUTE),W(FLUTE),S(GONG),S(GONG),S(GONG)}, p[NS]={1,1,0,0,0}; ens(d,"1-two-flutes_three-gongs-listening",v,p); }
-  { int v[NS]={S(GONG),S(GONG),S(GONG),S(GONG),S(GONG)}, p[NS]={1,1,1,1,1}; ens(d,"2-five-gongs-together",v,p); }
+  { int v[NS]={S(GONG),S(GONG),S(GONG),S(GONG),S(GONG)}, p[NS]={1,1,0,0,0}; ens(d,"2-five-gongs_two-struck-three-listening",v,p); }
   { int v[NS]={W(FLUTE),W(FLUTE),W(FLUTE),W(FLUTE),S(GONG)}, p[NS]={1,1,1,1,0}; ens(d,"3-four-flutes-in-harmony_one-gong-listening",v,p); }
   { int v[NS]={W(FREE),W(FREE),S(BOWL),S(BOWL),S(BOWL)}, p[NS]={1,1,0,0,0}; ens(d,"4-two-free-reeds_three-bowls-listening",v,p); }
+  { int v[NS]={W(FLUTE),W(FLUTE),S(BOWL),S(BOWL),S(BOWL)}, p[NS]={1,1,0,0,0}; ens(d,"5-two-flutes-euclidean_three-bowls-listening",v,p); }
+  { int v[NS]={0,S(GONG),S(BOWL),S(GLASS),0}, p[NS]={1,0,0,0,0}; ens(d,"6-one-string_gong-bowl-glass-string-listening",v,p); }
   return 0;
 }

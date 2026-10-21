@@ -1298,7 +1298,7 @@ int main(int argc, char **argv)
         rms = sqrt(rms / (RATE * 8)) / 32768.0;
         struct {
             uint32_t magic;
-            int on[NS], sp[NS][24], gp[27], lfo[NLFO][NLP], fx[NFX];
+            int on[NS], sp[NS][24], gp[27], lfo[NLFO][NLP], fx[17]; /* 17 effect settings before AIR */
             int prog_n, prog_pos, prog_note[NPROG][NS], prog_fine[NPROG][NS];
             char prog_name[NPROG][24];
         } old;
@@ -1487,7 +1487,7 @@ int main(int argc, char **argv)
     {
         struct {
             uint32_t magic;
-            int on[NS], sp[NS][25], gp[27], lfo[NLFO][NLP], fx[NFX];
+            int on[NS], sp[NS][25], gp[27], lfo[NLFO][NLP], fx[17]; /* 17 effect settings before AIR */
             int prog_n, prog_pos, prog_note[NPROG][NS], prog_fine[NPROG][NS];
             char prog_name[NPROG][24];
         } o13;
@@ -1596,7 +1596,7 @@ int main(int argc, char **argv)
     {
         struct {
             uint32_t magic;
-            int on[NS], sp[NS][26], gp[28], lfo[NLFO][NLP], fx[NFX];
+            int on[NS], sp[NS][26], gp[28], lfo[NLFO][NLP], fx[17]; /* 17 effect settings before AIR */
             int prog_n, prog_pos, prog_note[NPROG][NS], prog_fine[NPROG][NS];
             char prog_name[NPROG][24];
         } o14;
@@ -1614,6 +1614,32 @@ int main(int argc, char **argv)
         int ok = song_load(p14);
         printf("save compat v0.8: load=%d scale=%s playmode=%d release=%d attack=%d\n", ok,
                engine_scale_name(song.gp[GP_SCALE]), song.gp[GP_PLAYMODE], song.sp[0][SP_RELEASE], song.sp[0][SP_LATK]);
+    }
+    /* a v0.9-0.11 song (JDR15) loads: everything kept, AIR off, every voice playing */
+    {
+        struct {
+            uint32_t magic;
+            int on[NS], sp[NS][27], gp[28], lfo[NLFO][NLP], fx[17];
+            int prog_n, prog_pos, prog_note[NPROG][NS], prog_fine[NPROG][NS];
+            char prog_name[NPROG][24];
+        } o15;
+        memset(&o15, 0, sizeof o15);
+        o15.magic = 0x4a44520fu;
+        for (int v = 0; v < NS; v++)
+            o15.on[v] = 1, o15.sp[v][SP_LEVEL] = 60, o15.sp[v][SP_PSTEPS] = o15.sp[v][SP_PPULSES] = 4,
+            o15.sp[v][SP_LATK] = 42;
+        o15.gp[GP_SCALE] = 16, o15.gp[GP_ROOT] = 45, o15.gp[GP_BPM] = 70;
+        o15.fx[FX_SRING] = 77;
+        char p15[512];
+        snprintf(p15, sizeof p15, "%s/v011.jds", out);
+        FILE *f = fopen(p15, "wb");
+        fwrite(&o15, sizeof o15, 1, f);
+        fclose(f);
+        int ok = song_load(p15), listening = 0;
+        for (int v = 0; v < NS; v++)
+            listening += song.sp[v][SP_LISTEN] == AIR_LISTENS;
+        printf("save compat v0.11: load=%d attack=%d s ring=%d air=%d listening=%d\n", ok, song.sp[0][SP_LATK],
+               song.fx[FX_SRING], song.fx[FX_AIR], listening);
     }
     /* the LATCH screen: 1 plucked, 3 bowed, 4 fading, the rest silent */
     {
