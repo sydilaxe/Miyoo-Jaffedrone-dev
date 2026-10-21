@@ -1418,9 +1418,10 @@ int main(int argc, char **argv)
                early[0], early[1], early[0] > 3 * early[1]);
         printf("latch harmonic: %.1f Hz, B held %.1f Hz (x%.2f, want x2), let go %.1f Hz\n", f0, f1, f1 / f0, f2);
     }
-    /* L1 on PLAY: a tap (released within 150 ms) strikes, a short hold plucks;
-     * the strike is brighter than a pluck; a wind's tap overblows for a
-     * moment and settles on its note */
+    /* on PLAY the shoulders act at once: L1 plucks, L2 drops the dulcimer
+     * mallet (no waiting to tell a tap from a hold); the strike is brighter
+     * than a pluck; the dropped mallet lands again, lower and sooner; a wind's
+     * mallet is a flutter tongue */
     {
         song_default();
         engine_init(RATE);
@@ -1428,26 +1429,23 @@ int main(int argc, char **argv)
         song.gp[GP_PLAYMODE] = PLAY_LATCH;
         song.gp[GP_CHANGES] = 0;
         int16_t buf[2 * 480];
-        ui_button(BTN_L1, 1); /* a tap on the selected string, 130 ms, as read every 4 ms */
-        for (int t = 0; t < 130; t += 4)
-            ui_tick(4);
-        ui_button(BTN_L1, 0);
         engine_render(buf, 480);
+        ui_tick(400);
+        ui_button(BTN_L1, 1); /* L1: plucked on at once, no tick needed */
         int sel = -1;
         for (int v = 0; v < NS; v++)
             if (live.latch[v])
                 sel = v;
-        int tap_state = sel >= 0 ? live.latch[sel] : -1;
+        int l1_state = sel >= 0 ? live.latch[sel] : -1;
+        ui_button(BTN_L1, 0);
         if (sel >= 0)
             engine_latch(sel, LATCH_PLUCK); /* let it go */
         ui_tick(400);
-        ui_button(BTN_L1, 1); /* a short hold */
-        ui_tick(60);
-        int early = sel >= 0 ? live.latch[sel] : -1;
-        ui_tick(120);
-        ui_button(BTN_L1, 0);
-        int hold_state = sel >= 0 ? live.latch[sel] : -1;
+        ui_button(BTN_L2, 1); /* L2: the mallet, at once */
+        int l2_state = sel >= 0 ? live.latch[sel] : -1;
+        ui_button(BTN_L2, 0);
         engine_unlatch_all();
+        ui_tick(400);
         song.gp[GP_PLAYMODE] = PLAY_RINGS;
         /* brightness of the ringing string just after: a strike against a pluck */
         double hf[2];
@@ -1467,22 +1465,58 @@ int main(int argc, char **argv)
             }
             hf[k] = h / (e + 1);
         }
-        /* a flute's hard attack: an octave up for a moment, then the note */
-        solo(ENG_WIND, EX_FLUTE, MAT_WOOD, 0, 40);
-        engine_render(pcm, RATE * 2);
-        double f_before = hz_yin(pcm, RATE, RATE / 4);
-        engine_hammer(2);
-        engine_render(pcm, RATE / 10);
-        double f_kick = hz_yin(pcm, 1200, 2400);
-        engine_render(pcm, RATE);
-        double f_after = hz_yin(pcm, RATE / 2, RATE / 4);
-        printf("tap and hold: tap -> %s, 60 ms into a hold -> %s, the hold -> %s (want STRIKE, nothing yet, PLUCK)\n",
-               tap_state == LATCH_HAMMER ? "STRIKE" : tap_state == LATCH_PLUCK ? "PLUCK" : "none",
-               early == LATCH_OFF ? "nothing yet" : "already",
-               hold_state == LATCH_PLUCK ? "PLUCK" : hold_state == LATCH_HAMMER ? "STRIKE" : "none");
+        /* the dropped mallet lands again after the strike, on a string and on a struck body */
+        int lands_k[2];
+        for (int k = 0; k < 2; k++) {
+            solo(ENG_STRINGS, 0, 0, 0, 0);
+            if (k)
+                for (int v = 0; v < NS; v++)
+                    song.sp[v][SP_VOICE] = VOICE_PERC(PC_GENDER);
+            engine_render(pcm, RATE / 2);
+            engine_mallet_lands = 0;
+            engine_hammer(2);
+            engine_render(pcm, RATE / 2);
+            lands_k[k] = engine_mallet_lands;
+        }
+        int lands = lands_k[0] < lands_k[1] ? lands_k[0] : lands_k[1];
+        /* a flute's mallet: a flutter tongue, the breath cut about 20-26 times a second */
+        double flut[2];
+        for (int k = 0; k < 2; k++) {
+            solo(ENG_WIND, EX_FLUTE, MAT_WOOD, 0, 40);
+            engine_render(pcm, RATE * 2);
+            if (k)
+                engine_hammer(2);
+            else
+                engine_pluck(2);
+            engine_render(pcm, RATE / 2);
+            static double e[250];
+            double mu = 0;
+            for (int w = 0; w < 200; w++) { /* 2 ms windows over the first 400 ms */
+                double s2 = 0;
+                for (int q = 0; q < 96; q++) {
+                    double x = pcm[2 * (w * 96 + q)];
+                    s2 += x * x;
+                }
+                e[w] = sqrt(s2 / 96);
+                mu += e[w] / 200;
+            }
+            double best = 0;
+            for (double f = 16; f <= 28; f += 0.5) {
+                double re = 0, im = 0;
+                for (int w = 0; w < 200; w++)
+                    re += (e[w] - mu) * cos(2 * M_PI * f * w * 0.002), im += (e[w] - mu) * sin(2 * M_PI * f * w * 0.002);
+                double m = sqrt(re * re + im * im) / 200 / (mu + 1);
+                if (m > best)
+                    best = m;
+            }
+            flut[k] = best;
+        }
+        printf("buttons: L1 -> %s, L2 -> %s (want PLUCK, STRIKE, both at once)\n",
+               l1_state == LATCH_PLUCK ? "PLUCK" : l1_state == LATCH_HAMMER ? "STRIKE" : "none",
+               l2_state == LATCH_HAMMER ? "STRIKE" : l2_state == LATCH_PLUCK ? "PLUCK" : "none");
         printf("strike: brightness %.3f against a pluck's %.3f (want brighter: %d)\n", hf[1], hf[0], hf[1] > hf[0]);
-        printf("wind hard attack: %.0f Hz, the kick %.0f Hz (x%.2f), then %.0f Hz\n", f_before, f_kick, f_kick / f_before,
-               f_after);
+        printf("mallet drop: string %d landings, struck %d (want 3 or more: %d); flute flutter %.3f against a tongued note's %.3f "
+               "(want a flutter: %d)\n", lands_k[0], lands_k[1], lands >= 3, flut[1], flut[0], flut[1] > 3 * flut[0] && flut[1] > 0.05);
     }
     /* a v0.6 / v0.7 song (JDR13) loads: its voices kept, RELEASE and PLAY MODE new */
     {

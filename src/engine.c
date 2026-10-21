@@ -300,7 +300,8 @@ static const char *const engine_names[NENGINE] = {"STRINGS", "WIND"};
 static const char *const excite_names[NEXCITE] = {"LIP", "REED", "DOUBLE", "FLUTE", "FREE", "RECORDER", "BANSURI"};
 static const char *const material_names[NMATERIAL] = {"WOOD", "METAL", "CERAMIC", "GLASS"};
 static const int def_lfo[NLFO][NLP] = {{2, SH_SINE, LT_CUTOFF, 35}, {4, SH_TRI, LT_LEVEL, 0}};
-static const int def_fx[NFX] = {5, 45, 25, 35, 60, 55, 0, 100, 0, 30, 35, BODY_WOOD, 7, STUNE_CHORD, 1, 45, 70};
+/* delay MIX and reverb SEND start at 0: the effects off until wanted, like binaural */
+static const int def_fx[NFX] = {5, 45, 0, 0, 60, 55, 0, 100, 0, 30, 35, BODY_WOOD, 7, STUNE_CHORD, 1, 45, 70};
 
 const ParamDef *sparam_def(int p) { return &sparams[p]; }
 /* in WIND the string controls take on their wind meanings */
@@ -593,6 +594,7 @@ typedef struct {
     int hammer;              /* the burst is a hammer's strike, not a pluck */
     int bounce_n;            /* samples until the hammer bounces back onto the string */
     float bounce_amp;
+    int bounce_gap;          /* ... and the gap before that touch: each rebound lower and sooner */
     int over_kick;           /* WIND: samples left of a hard attack's overblow */
     /* STRUCK: the modes (velocity + i w displacement, which simply rotates)
      * and the mallet: its height over the surface, its speed, how hard */
@@ -610,6 +612,7 @@ typedef struct {
     int jw, chiff_n;
     float dcx, dcy, lx1, lx2, lz1, lz2;
     float tg, chiff, pr, vph, gr_lp, nlp, frph, fr_amp;
+    float fl_env, fl_ph;     /* flutter tongue: how deep the tongue's roll is now, and its phase */
     float art_t, art_amp; /* a tongued note: its time (samples, <0 idle) and strength */
     /* the player's ear: the sounding period from zero crossings of a
      * lowpassed copy, and the bore correction that pulls it onto the note */
@@ -738,25 +741,52 @@ static void string_pluck(String *s, float amp)
  * strike (about 0.35 ms of contact), and bounces back for a lighter second
  * touch 22 ms later. A wind voice: a hard attack, the breath pushed so
  * hard the note jumps to its overblown register for a moment and settles */
+/* the dulcimer mallet, dropped: like a bouncing ball, it lands again a
+ * little after the strike, each rebound lower (half the force) and sooner
+ * (60% of the gap before: 50, 30, 18, 11 ms ...) until it comes to rest */
+#define DROP_GAP 0.05f
+int engine_mallet_lands; /* the dropped mallets' landings, counted (for the tests) */
+static void hammer_drop(String *s, float amp)
+{
+    s->bounce_gap = (int)(DROP_GAP * sr);
+    s->bounce_n = s->bounce_gap;
+    s->bounce_amp = amp * 0.5f;
+}
+/* a sample of the dropped mallet: 1 when it lands again (then the next
+ * rebound is set up) */
+static inline int hammer_lands(String *s)
+{
+    if (s->bounce_n <= 0 || --s->bounce_n > 0)
+        return 0;
+    s->bounce_gap = (int)(s->bounce_gap * 0.6f);
+    if (s->bounce_amp > 0.04f && s->bounce_gap > (int)(0.003f * sr)) {
+        s->bounce_n = s->bounce_gap; /* the next, lower and sooner */
+        s->bounce_amp *= 0.5f;
+    }
+    engine_mallet_lands++;
+    return 1;
+}
+
 static void string_hammer(String *s, float amp)
 {
-    if (vkind(s->voice_was) == 2) { /* struck: a hard mallet, hit harder */
+    if (vkind(s->voice_was) == 2) { /* struck: a hard mallet, hit harder, dropped so it bounces */
         perc_strike(s, fminf(1.f, amp * 1.3f), 3.f);
+        hammer_drop(s, fminf(1.f, amp * 1.3f));
         return;
     }
-    if (vkind(s->voice_was) == 1) {
+    if (vkind(s->voice_was) == 1) { /* a breath: a flutter tongue, the tongue rolling "frrr" and settling */
         s->art_t = 0.f;
-        s->art_amp = fminf(1.f, amp * 1.4f);
-        s->chiff = amp;
+        s->art_amp = fminf(1.f, amp * 1.2f);
+        s->chiff = amp * 0.6f;
         s->chiff_n = (int)(CHIFF_MS * sr);
-        s->over_kick = (int)(0.08f * sr);
+        s->fl_env = fminf(1.f, amp);
+        s->fl_ph = 0.f;
         return;
     }
     s->burst = s->burst_len = (int)(0.00035f * sr) + 2; /* a hard hammer: a very short contact */
     s->burst_amp = amp;
     s->hammer = 1;
-    s->bounce_n = (int)(0.022f * sr);
-    s->bounce_amp = amp * 0.35f;
+    hammer_drop(s, amp);
 }
 
 void engine_pluck(int s)
@@ -1611,6 +1641,14 @@ static void wind_tick(String *st, const WindVoice *v, float inj, float *py, floa
     if (st->vph >= 1.f)
         st->vph -= 1.f;
     float p = st->pr * (1.f + v->vib * 0.07f * sin01(st->vph));
+    if (st->fl_env > 1e-3f) { /* flutter tongue: the air cut about 24 times a second, the roll slowing as it fades */
+        st->fl_ph += (18.f + 8.f * st->fl_env) / sr;
+        if (st->fl_ph >= 1.f)
+            st->fl_ph -= 1.f;
+        float cut = 0.5f + 0.5f * sin01(st->fl_ph); /* 0 .. 1: the tongue against the palate */
+        p *= 1.f - 0.85f * st->fl_env * cut * cut;
+        st->fl_env *= 1.f - 2.2f / sr; /* the roll fades over about half a second */
+    }
     st->gr_lp += (fnoise() - st->gr_lp) * 0.004f; /* growl: a slow rasp, rough at a lip attack */
     p *= 1.f + (v->growl + (v->ex == EX_LIP ? 0.5f * atk : 0.f)) * 4.f * st->gr_lp;
     float bp = v->pmax * (1.f - exp_neg(-2.5f * fmaxf(p, 0.f)));
@@ -2547,6 +2585,11 @@ void engine_render(int16_t *out, int frames)
                     continue;
 
                 float y, o;
+                if (pv_on[s] && st->bounce_n > 0) { /* the dropped mallet lands again on the body */
+                    float amp = st->bounce_amp;
+                    if (hammer_lands(st))
+                        perc_strike(st, amp, 3.f);
+                }
                 if (pv_on[s]) { /* a struck body barely hears the bridge */
                     perc_tick(st, &pv[s], 0.2f * couple * (bridge - st->last_y), &y, &o);
                     if (fold_g[s] > 0.f) {
@@ -2653,10 +2696,13 @@ void engine_render(int16_t *out, int frames)
                 ex += couple * (bridge - st->last_y);
                 st->last_y = y * st->gain;
                 br += st->last_y;
-                if (st->bounce_n > 0 && --st->bounce_n == 0) { /* the hammer bounces back */
-                    st->burst = st->burst_len = (int)(0.00025f * sr) + 2;
-                    st->burst_amp = st->bounce_amp;
-                    st->hammer = 1;
+                if (st->bounce_n > 0) { /* the dropped hammer lands again */
+                    float amp = st->bounce_amp;
+                    if (hammer_lands(st)) {
+                        st->burst = st->burst_len = (int)(0.00025f * sr) + 2;
+                        st->burst_amp = amp;
+                        st->hammer = 1;
+                    }
                 }
                 if (st->burst > 0) {
                     /* coloured by BRIGHT, windowed, and with less push into

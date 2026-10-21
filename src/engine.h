@@ -8,7 +8,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define JD_VERSION "0.11.3"
+#define JD_VERSION "0.11.4"
 
 #define NS 5
 #define NSP 27 /* params per string */
@@ -153,6 +153,7 @@ const ParamDef *sparam_def(int p);
 const char *sparam_name(int s, int p); /* the name for voice s's engine */
 int engine_voice_wind(int s);          /* 1 if voice s is a wind voice */
 int engine_voice_perc(int s);          /* 1 if voice s is a struck voice */
+extern int engine_mallet_lands; /* the dropped mallets' landings after the strike (tests) */
 int engine_perc_count(const Song *g);  /* how many voices are struck */
 extern int engine_perc_skip;  /* skip struck modes that have died away (on; off only in tests) */
 extern int engine_perc_cache; /* keep struck modes between sub-blocks (on; off only in tests) */
