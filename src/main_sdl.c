@@ -53,15 +53,6 @@ static void audio_cb(void *ud, Uint8 *stream, int len)
         int ok = pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp) == 0;
         if (!use_ahead)
             timing.rt = ok;
-#if defined(__arm__)
-        /* numbers too small to hear (below 1e-38, at the very end of a
-         * decay) are taken as zero, which the processor handles at full
-         * speed */
-        unsigned fpscr;
-        __asm__ volatile("vmrs %0, fpscr" : "=r"(fpscr));
-        fpscr |= 1u << 24;
-        __asm__ volatile("vmsr fpscr, %0" : : "r"(fpscr));
-#endif
     }
     uint64_t t0 = now_us();
     static uint64_t prev_t0;

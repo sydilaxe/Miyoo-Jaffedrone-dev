@@ -12,7 +12,7 @@ static volatile uint32_t wpos, rpos; /* frames written and read, ever */
 static int chunk_, ahead_, rate_, rt_ok;
 static void (*render_)(int16_t *, int);
 static pthread_t th;
-static pthread_mutex_t eng = PTHREAD_MUTEX_INITIALIZER; /* the engine: the thread and setting changes */
+static pthread_mutex_t eng; /* the engine: the thread and setting changes (set up on the first start) */
 static pthread_mutex_t mx = PTHREAD_MUTEX_INITIALIZER;  /* the ring's waiting */
 static pthread_cond_t want = PTHREAD_COND_INITIALIZER, have = PTHREAD_COND_INITIALIZER;
 static volatile int running;
@@ -70,11 +70,15 @@ int ahead_start(void (*render)(int16_t *, int), int rate, int chunk, int ahead, 
     memset(&st, 0, sizeof st);
     /* the engine's lock passes on priority: a setting change in the screen's
      * thread never keeps the sound waiting behind it */
-    pthread_mutexattr_t ma;
-    pthread_mutexattr_init(&ma);
-    pthread_mutexattr_setprotocol(&ma, PTHREAD_PRIO_INHERIT);
-    pthread_mutex_init(&eng, &ma);
-    pthread_mutexattr_destroy(&ma);
+    static int eng_ready;
+    if (!eng_ready) {
+        pthread_mutexattr_t ma;
+        pthread_mutexattr_init(&ma);
+        pthread_mutexattr_setprotocol(&ma, PTHREAD_PRIO_INHERIT);
+        pthread_mutex_init(&eng, &ma);
+        pthread_mutexattr_destroy(&ma);
+        eng_ready = 1;
+    }
     running = 1;
     pthread_attr_t a;
     pthread_attr_init(&a);

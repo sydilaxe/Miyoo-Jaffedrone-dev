@@ -1726,13 +1726,6 @@ int main(int argc, char **argv)
         for (int i = 0; i < frames; i += 256)
             engine_render(direct + 2 * i, 256);
         int same = as.short_frames == 0 && memcmp(direct, via, (size_t)frames * 4) == 0;
-        if (!same && getenv("RA_DEBUG")) {
-            int d = 0;
-            while (d < frames * 2 && direct[d] == via[d])
-                d++;
-            printf("render ahead debug: short %u frames in %u calls, first difference at frame %d\n", as.short_frames,
-                   as.short_calls, d / 2);
-        }
         printf("render ahead: at 60%% load, late pairs made in the request %d of 23, made ahead %d (want under 2); "
                "same sound %d\n", late_direct, late_ahead, same);
     }
@@ -1804,6 +1797,33 @@ int main(int argc, char **argv)
             printf("dsp WORST (%s, everything up): 30 s in %.2f s host cpu (%.1f%%), sounding %d\n", mix_names[m],
                    secs_cpu, secs_cpu / 30.0 * 100.0, rms_of(pcm, 0, 1024) > 100);
         }
+    }
+
+    /* the struck modes kept between sub-blocks give exactly the sound of
+     * working them out every time: with drift moving the pitch, CHORD
+     * following the scale's changes, and a voice switched mid-way */
+    {
+        static int16_t a[RATE * 6 * 2], b[RATE * 6 * 2];
+        for (int pass = 0; pass < 2; pass++) {
+            song_default();
+            song.gp[GP_DRIFT] = gparam_def(GP_DRIFT)->max;
+            song.gp[GP_CHANGES] = 1;
+            for (int s = 0; s < NS; s++)
+                song.sp[s][SP_VOICE] = VOICE_PERC(s == 4 ? PC_CHORD : s * 2), song.sp[s][SP_STIFF] = 30 * (s & 1);
+            engine_perc_cache = pass;
+            engine_init(RATE);
+            engine_set_playing(1);
+            int16_t *dst = pass ? b : a;
+            for (int i = 0; i < 6; i++) {
+                if (i % 2 == 0)
+                    engine_pluck(0), engine_pluck(2), engine_pluck(4);
+                if (i == 3)
+                    song.sp[1][SP_VOICE] = VOICE_PERC(PC_CYMBAL);
+                engine_render(dst + 2 * RATE * i, RATE);
+            }
+        }
+        engine_perc_cache = 1;
+        printf("struck cache: same sound as working the modes out every time %d\n", memcmp(a, b, sizeof a) == 0);
     }
 
     /* skipping silent struck modes: the same sound with and without, and

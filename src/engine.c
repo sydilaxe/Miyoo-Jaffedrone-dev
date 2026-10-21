@@ -1814,6 +1814,7 @@ static int perc_gen; /* a new start: every body works its modes out afresh */
  * four at a time, until the mallet or bow wakes the body again. (Off only
  * to test that skipping changes nothing that can be heard.) */
 int engine_perc_skip = 1;
+int engine_perc_cache = 1; /* the modes kept between sub-blocks (off only to test it changes nothing) */
 #define PERC_REST 1e-10f /* a mode's energy at rest (|z| 1e-5) */
 
 static void perc_init_models(void)
@@ -1857,9 +1858,7 @@ static void perc_setup(PercVoice *v, String *st, const int *P, float hz, float b
     int sing = P[SP_HARM] + (st->over ? 1 : 0); /* the mode the bow favours; a touch moves it up */
     int key[7] = {perc_gen, model, P[SP_STIFF], P[SP_DECAY], P[SP_POS], sing, st->over};
     int fresh = memcmp(key, v->key, sizeof key) || memcmp(m->r, v->r_was, sizeof v->r_was);
-#ifdef PERC_NOCACHE
-    fresh = 1;
-#endif
+    fresh |= !engine_perc_cache;
     if (fresh) {
         memcpy(v->key, key, sizeof key);
         memcpy(v->r_was, m->r, sizeof v->r_was);
@@ -2327,9 +2326,9 @@ void engine_render(int16_t *out, int frames)
     int ombak = song.fx[FX_BINLOCK] == BIN_OMBAK;
     float bin_dc = cosf(3.14159265f * bin_hz / sr), bin_ds = sinf(3.14159265f * bin_hz / sr); /* half the beat per ear */
     {
-        float m = sqrtf(bin_c * bin_c + bin_s * bin_s); /* keep the phasor exactly round */
-        if (m > 0.f)
-            bin_c /= m, bin_s /= m;
+        float mag = sqrtf(bin_c * bin_c + bin_s * bin_s); /* keep the phasor exactly round */
+        if (mag > 0.f)
+            bin_c /= mag, bin_s /= mag;
     }
     float bin_lk = 1.f - expf(-6.2831853f * 1000.f / sr);
     /* reverb: TIME sets the decay (0.5 .. 10 s), TONE the damping */
