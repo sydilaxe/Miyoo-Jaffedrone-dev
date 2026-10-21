@@ -1852,6 +1852,38 @@ int main(int argc, char **argv)
         printf("struck cache: same sound as working the modes out every time %d\n", memcmp(a, b, sizeof a) == 0);
     }
 
+    /* AIR in LATCH: a latched flute, four gongs listening. The listeners are
+     * never latched (pressing them does nothing) yet sing; with AIR off they
+     * stay silent */
+    {
+        extern float engine_vout_pk[NS];
+        float sing[2];
+        int refused = 0;
+        for (int a = 0; a < 2; a++) {
+            song_default();
+            song.gp[GP_PLAYMODE] = PLAY_LATCH;
+            song.gp[GP_CHANGES] = 0;
+            song.fx[FX_AIR] = a ? 100 : 0;
+            song.sp[0][SP_VOICE] = 1 + EX_FLUTE;
+            for (int v = 1; v < NS; v++)
+                song.sp[v][SP_VOICE] = VOICE_PERC(PC_GONG), song.sp[v][SP_LISTEN] = AIR_LISTENS,
+                song.sp[v][SP_NOTE] = song.sp[0][SP_NOTE], song.sp[v][SP_DECAY] = 100;
+            engine_init(RATE);
+            engine_set_playing(1);
+            engine_render(pcm, 1024);
+            engine_latch(0, LATCH_BOW);
+            refused += engine_latch(2, LATCH_BOW) == LATCH_OFF;
+            engine_render(pcm, RATE * 4);
+            memset(engine_vout_pk, 0, sizeof engine_vout_pk);
+            engine_render(pcm, RATE);
+            sing[a] = 0;
+            for (int v = 1; v < NS; v++)
+                sing[a] += engine_vout_pk[v];
+        }
+        printf("air in latch: listeners off %.4f, on %.3f (want them singing: %d), a listener refuses the latch %d\n",
+               sing[0], sing[1], sing[1] > 0.02f && sing[0] < 1e-4f, refused == 2);
+    }
+
     /* skipping silent struck modes: the same sound with and without, and
      * cheaper once a struck body has rung down (no bow, struck now and then,
      * strings ringing beside it into the sympathetic strings) */

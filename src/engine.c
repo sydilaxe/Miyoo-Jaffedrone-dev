@@ -830,7 +830,7 @@ void engine_bow(int s, int on)
 
 int engine_latch(int s, int how)
 {
-    if (s < 0 || s >= NS)
+    if (s < 0 || s >= NS || LISTENING(&str[s])) /* a listener is never played */
         return LATCH_OFF;
     String *st = &str[s];
     if (st->latched) /* played again: let go, it fades over its RELEASE */
@@ -2418,6 +2418,8 @@ void engine_render(int16_t *out, int frames)
         if (str[s].over) /* touched by hand: the next harmonic up */
             harm_n[s] = harm_n[s] > 0.f ? fminf(harm_n[s] + 1.f, 6.f) : 2.f;
         gate_d[s] = latch_mode ? 1.f : song.sp[s][SP_GATE] / 100.f; /* LATCH: the sound follows the latch */
+        if (song.fx[FX_AIR] > 0 && song.sp[s][SP_LISTEN] == AIR_LISTENS)
+            gate_d[s] = 0.f; /* a listener is never played: nothing of its own to gate it */
     }
     /* sympathetic strings: tune them, and set their loop */
     int nsy = song.fx[FX_SCOUNT];
