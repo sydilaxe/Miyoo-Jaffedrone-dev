@@ -22,6 +22,7 @@ typedef struct {
     uint32_t calls, late;    /* late: the device ran out of audio (a dropout) */
     uint32_t us_max, us_sum; /* time spent rendering */
     uint32_t ui_frames, ui_ms_sum, ui_ms_max; /* the screen: frames drawn and their time */
+    uint32_t gap_max_us;     /* the longest wait between two callbacks */
     uint32_t buffer_us;      /* one buffer's worth of time */
     int rt;                  /* the audio thread runs at real-time priority */
 } AudioTiming;

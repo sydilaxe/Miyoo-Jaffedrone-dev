@@ -49,8 +49,21 @@ static void audio_cb(void *ud, Uint8 *stream, int len)
         prio_tried = 1;
         struct sched_param sp = {.sched_priority = 40};
         timing.rt = pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp) == 0;
+#if defined(__arm__)
+        /* numbers too small to hear (below 1e-38, at the very end of a
+         * decay) are taken as zero, which the processor handles at full
+         * speed */
+        unsigned fpscr;
+        __asm__ volatile("vmrs %0, fpscr" : "=r"(fpscr));
+        fpscr |= 1u << 24;
+        __asm__ volatile("vmsr fpscr, %0" : : "r"(fpscr));
+#endif
     }
     uint64_t t0 = now_us();
+    static uint64_t prev_t0;
+    if (prev_t0 && t0 - prev_t0 > timing.gap_max_us)
+        timing.gap_max_us = (uint32_t)(t0 - prev_t0);
+    prev_t0 = t0;
     if (!clock0_us)
         clock0_us = t0;
     else if (timing.buffer_us) {

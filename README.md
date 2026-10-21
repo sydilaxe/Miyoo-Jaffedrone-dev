@@ -412,14 +412,19 @@ SELECT** cycles it OFF, BASIC and DETAIL; LOG shows in the header while it runs,
   line), page changes, chord changes with their scale, and the audio setup at start. DETAIL adds every press
   (with L2/R2 held) and hand playing: plucks, tongued notes, bowing or blowing, with how long.
 - **Status:** every 10 s (every second in DETAIL), for example:
-  `STAT load avg 4% peak 9% late 0 | peak 0.71 rms 0.18 clips 0 | leveller avg 3.1 min 1.9 | screen avg 12 ms max 20 ms | audio realtime | sync lead`
+  `STAT load avg 4% peak 9% late 0 gap max 22 ms calls 46.9/s of 46.9 | peak 0.71 rms 0.18 clips 0 | leveller avg 3.1 min 1.9 | screen avg 12 ms max 20 ms | audio realtime | cpu 1200 MHz 52 C cores 0-1 | sync lead`
 
   - **load:** how much of each audio buffer's time rendering took.
   - **late:** audio dropouts: times the sound card ran out of sound. These are crackles.
+  - **gap max** and **calls:** the longest wait between two audio callbacks, and how many came each second
+    against how many there should be. Fewer calls than wanted, or long gaps at a modest load, mean
+    something outside Jaffedrone held the audio up.
   - **peak**, **rms** and **clips:** the output level, and samples near full scale.
   - **leveller:** how much the leveller lifts the sound.
   - **screen:** how long each frame of the screen takes to draw (about 33 ms is one frame at 30 a second).
   - **audio:** `realtime` when the audio thread runs ahead of everything else, as it should on the Miyoo.
+  - **cpu:** the processor's clock, its temperature and the cores running. A clock or core count that
+    drops mid-session (heat, power saving) explains crackles that the load alone does not.
 - **Voices** (DETAIL): each voice's wanted and measured pitch in hertz and cents, its meter, its breath or
   bow, and the lip voice's tuning correction. The pitch is measured from the voice's own sound by the same
   method the test harness uses.
@@ -447,7 +452,10 @@ The audio thread only fills counters; all writing happens in the main thread.
   - each scale's progression;
   - binaural beats, harmonic touch, chance, RELATE and the string gates;
   - Wi-Fi sync;
-  - DSP load.
+  - DSP load, including the worst cases (every effect up) and that resting silent struck modes changes
+    nothing that can be heard.
+- `make bench` ranks 32 voice mixtures (each voice five times over, and mixtures such as two cymbals, two
+  flutes and a free reed) at their worst, heaviest first, relative to the default drone.
 - `make install SD=/path/to/card` copies the app into `App/`.
 - `make package CROSS=/opt/miyoomini-toolchain/usr/bin/arm-linux-gnueabihf-` builds with the OnionOS gcc
   toolchain instead of zig (in the `aemiii91/miyoomini-toolchain` container) and writes

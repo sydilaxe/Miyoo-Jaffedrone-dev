@@ -1456,26 +1456,30 @@ int main(int argc, char **argv)
                song.gp[GP_PLAYMODE], song.gp[GP_BPM]);
     }
     /* switching a voice while it sounds: the old voice fades out before the
-     * new one starts, so the change makes no step bigger than playing does */
+     * new one starts, so the change makes no step bigger than playing does
+     * (averaged over several moments: a bowed string's level wavers) */
     {
-        song_default();
-        engine_init(RATE);
-        engine_set_playing(1);
-        song.gp[GP_CHANGES] = 0;
-        song.fx[FX_DMIX] = song.fx[FX_VSEND] = song.fx[FX_SCOUNT] = song.fx[FX_BODY] = 0;
-        for (int v = 0; v < NS; v++)
-            song.on[v] = v == 2, song.sp[v][SP_PON] = song.sp[v][SP_BON] = 0;
-        song.sp[2][SP_BOW] = 70;
-        engine_render(pcm, RATE * 3);
-        /* a cut leaves the moments after the change nearly silent; the fade
-         * still holds most of the sound 5 ms later */
-        engine_render(pcm, RATE / 2);
-        double before = rms_of(pcm, RATE / 2 - 480, 480);
-        song.sp[2][SP_VOICE] = 1 + EX_REED; /* string -> reed while it plays */
-        engine_render(pcm, RATE / 4);
-        double after = rms_of(pcm, 384, 240); /* 8 .. 13 ms: past the limiter's 6 ms look-ahead */
+        double sum = 0;
+        for (int k = 0; k < 6; k++) {
+            song_default();
+            engine_init(RATE);
+            engine_set_playing(1);
+            song.gp[GP_CHANGES] = 0;
+            song.fx[FX_DMIX] = song.fx[FX_VSEND] = song.fx[FX_SCOUNT] = song.fx[FX_BODY] = 0;
+            for (int v = 0; v < NS; v++)
+                song.on[v] = v == 2, song.sp[v][SP_PON] = song.sp[v][SP_BON] = 0;
+            song.sp[2][SP_BOW] = 70;
+            engine_render(pcm, RATE * 3 + k * 1777);
+            /* a cut leaves the moments after the change nearly silent; the fade
+             * still holds most of the sound 8 ms later */
+            engine_render(pcm, RATE / 2);
+            double before = rms_of(pcm, RATE / 2 - 480, 480);
+            song.sp[2][SP_VOICE] = 1 + EX_REED; /* string -> reed while it plays */
+            engine_render(pcm, RATE / 4);
+            sum += rms_of(pcm, 384, 240) / before; /* 8 .. 13 ms: past the limiter's 6 ms look-ahead */
+        }
         printf("voice switch: %.0f%% of the sound still there 8 ms after the change (want over 75%%: a fade, not a "
-               "cut)\n", 100.0 * after / before);
+               "cut)\n", 100.0 * sum / 6);
     }
     /* both shoulders, either order, sound the harmonic (or overblow) of the
      * selected string: in LATCH over its drone, in RINGS over the hand bow */
@@ -1663,6 +1667,81 @@ int main(int argc, char **argv)
         engine_render(pcm, 1024);
     secs_cpu = (double)(clock() - c0) / CLOCKS_PER_SEC;
     printf("dsp STRUCK (five bowed cymbals): 30 s in %.2f s host cpu (%.1f%%)\n", secs_cpu, secs_cpu / 30.0 * 100.0);
+    /* the worst cases: every effect at its top (the sympathetic strings,
+     * body, delay, reverb, binaural, undertones), each voice at full bow or
+     * breath, ring, sizzle, fold and stretch, the fastest tempo: five bowed
+     * cymbals, then a mixture of struck, wind and string. Everyday playing
+     * costs less than these. */
+    {
+        static const int mixes[3][NS] = {
+            {VOICE_PERC(PC_CYMBAL), VOICE_PERC(PC_CYMBAL), VOICE_PERC(PC_CYMBAL), VOICE_PERC(PC_CYMBAL),
+             VOICE_PERC(PC_CYMBAL)},
+            {VOICE_PERC(PC_CYMBAL), VOICE_PERC(PC_CYMBAL), 1 + EX_FLUTE, 1 + EX_FLUTE, 1 + EX_FREE},
+            {0, 1 + EX_FREE, VOICE_PERC(PC_CYMBAL), 1 + EX_FLUTE, VOICE_PERC(PC_GONG)},
+        };
+        static const char *const mix_names[3] = {"five bowed cymbals", "2 cymbals, 2 flutes, free reed",
+                                                 "string, free reed, cymbal, flute, gong"};
+        for (int m = 0; m < 3; m++) {
+            song_default();
+            for (int p = 0; p < NFX; p++)
+                song.fx[p] = fparam_def(p)->max;
+            song.gp[GP_SUB] = gparam_def(GP_SUB)->max;
+            song.gp[GP_SUBRES] = gparam_def(GP_SUBRES)->max;
+            song.gp[GP_BPM] = gparam_def(GP_BPM)->max;
+            for (int s = 0; s < NS; s++) {
+                song.on[s] = 1;
+                song.sp[s][SP_VOICE] = mixes[m][s];
+                static const int top[] = {SP_BOW, SP_DECAY, SP_BUZZ, SP_FOLD, SP_STIFF, SP_BRIGHT};
+                for (int k = 0; k < 6; k++)
+                    song.sp[s][top[k]] = sparam_def(top[k])->max;
+            }
+            engine_init(RATE);
+            engine_set_playing(1);
+            c0 = clock();
+            for (int i = 0; i < 30 * RATE / 1024; i++)
+                engine_render(pcm, 1024);
+            secs_cpu = (double)(clock() - c0) / CLOCKS_PER_SEC;
+            printf("dsp WORST (%s, everything up): 30 s in %.2f s host cpu (%.1f%%), sounding %d\n", mix_names[m],
+                   secs_cpu, secs_cpu / 30.0 * 100.0, rms_of(pcm, 0, 1024) > 100);
+        }
+    }
+
+    /* skipping silent struck modes: the same sound with and without, and
+     * cheaper once a struck body has rung down (no bow, struck now and then,
+     * strings ringing beside it into the sympathetic strings) */
+    {
+        static int16_t a[RATE * 12 * 2], b[RATE * 12 * 2];
+        double cpu[2];
+        for (int pass = 0; pass < 2; pass++) {
+            song_default();
+            song.fx[FX_SYMP] = fparam_def(FX_SYMP)->max;
+            song.fx[FX_SCOUNT] = fparam_def(FX_SCOUNT)->max;
+            for (int s = 0; s < NS; s++)
+                song.sp[s][SP_VOICE] = s < 3 ? VOICE_PERC(s == 0 ? PC_CYMBAL : s == 1 ? PC_GENDER : PC_DRUM) : 0,
+                song.sp[s][SP_BOW] = s < 3 ? 0 : song.sp[s][SP_BOW];
+            engine_perc_skip = pass;
+            engine_init(RATE);
+            engine_set_playing(1);
+            int16_t *dst = pass ? b : a;
+            clock_t t0 = clock();
+            for (int i = 0; i < 12; i++) {
+                if (i % 4 == 0)
+                    engine_pluck(0), engine_pluck(1), engine_pluck(2);
+                engine_render(dst + 2 * RATE * i, RATE);
+            }
+            cpu[pass] = (double)(clock() - t0) / CLOCKS_PER_SEC;
+        }
+        engine_perc_skip = 1;
+        double sig = 0, err = 0;
+        for (int i = 0; i < RATE * 12 * 2; i++) {
+            double d = (double)a[i] - b[i];
+            sig += (double)a[i] * a[i];
+            err += d * d;
+        }
+        double snr = err > 0 ? 10 * log10(sig / err) : 200;
+        printf("struck skipping: difference %.0f dB below the sound (want over 80: %d); cpu %.2f s -> %.2f s\n", snr,
+               snr > 80, cpu[0], cpu[1]);
+    }
     song_default();
     for (int s = 0; s < NS; s++)
         song.sp[s][SP_VOICE] = 1 + EX_BANSURI;

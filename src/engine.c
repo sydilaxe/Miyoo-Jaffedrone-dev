@@ -1,6 +1,9 @@
 #include "engine.h"
 
 #include <math.h>
+#ifdef __ARM_NEON
+#include <arm_neon.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -593,11 +596,13 @@ typedef struct {
     int over_kick;           /* WIND: samples left of a hard attack's overblow */
     /* STRUCK: the modes (velocity + i w displacement, which simply rotates)
      * and the mallet: its height over the surface, its speed, how hard */
-    float mz[PMAX][2];
+    float zr[PMAX] __attribute__((aligned(16))); /* kept apart, four at a time for the vector unit */
+    float zi[PMAX] __attribute__((aligned(16)));
     float hm_y, hm_v, hm_hard;
     int hm_on;
     float bow_lpn;           /* rosin: the bow's slow noise */
     float bow_ud;            /* the surface's speed under the bow, last sample */
+    float inj_pk;            /* the most the bridge pushed it, last sub-block */
     float ap[2][2]; /* STIFF: two dispersive allpasses in the loop */
     float fold_x1;  /* FOLD: last input, for the anti-aliased folder */
     /* WIND: the jet delay, a DC blocker, the lip resonator, breath and tongue */
@@ -1466,8 +1471,13 @@ static inline float hil_chain(float x, const float *a, float (*st)[4])
 /* FOLD: the triangle folder and its antiderivative, for anti-aliasing */
 static inline float fold_u(float x)
 {
-    float u = fmodf(x + 1.f, 4.f);
-    return u < 0.f ? u + 4.f : u;
+    /* (x + 1) mod 4 in [0, 4), without a library call: whole fours are
+     * taken off exactly (the result keeps every bit of x) */
+    float y = x + 1.f, q = y * 0.25f;
+    int k = (int)q;
+    k -= (float)k > q;
+    float u = y - 4.f * (float)k;
+    return u < 4.f ? u : 0.f;
 }
 static inline float fold_f(float x)
 {
@@ -1780,15 +1790,31 @@ static float perc_ring(const PercModel *m, int d)
 float engine_perc_ring(int voice, int d) { return perc_ring(&perc_models[voice - 1 - NEXCITE], d); }
 
 typedef struct {
-    int n;
-    float ar[PMAX], ai[PMAX]; /* each mode's rotation and decay per sample */
-    float w[PMAX];            /* radians per sample, for the displacement */
-    float phi[PMAX];          /* how the mode moves where it is struck or bowed */
-    float bow_w[PMAX];        /* ... how much of it the bow catches */
-    float out[PMAX];          /* how loud it is heard */
+    int n;                    /* the modes, padded to a multiple of four */
+    int nact;                 /* ... of which the first nact still sound */
+    float ar[PMAX] __attribute__((aligned(16))); /* each mode's rotation and decay per sample */
+    float ai[PMAX] __attribute__((aligned(16)));
+    float phi[PMAX] __attribute__((aligned(16)));   /* how the mode moves where it is struck or bowed */
+    float bow_w[PMAX] __attribute__((aligned(16))); /* ... how much of it the bow catches */
+    float out[PMAX] __attribute__((aligned(16)));   /* how loud it is heard */
+    float pw[PMAX];           /* phi / omega: the displacement the mallet meets */
     float K;                  /* the mallet's spring */
     float sizzle, bow_p, bow_v;
+    /* what the modes were worked out from: they are worked out again only
+     * when one of these changes (the pitch alone redoes just the turning) */
+    int key[7];
+    float r_was[16], hz;
+    int nm;                   /* the modes before padding */
+    float rr[PMAX], off[PMAX], rad[PMAX]; /* frequency over the note, Hz either side, decay */
 } PercVoice;
+static int perc_gen; /* a new start: every body works its modes out afresh */
+
+/* silent modes are skipped: the modes run from low to high, and once the
+ * highest have died below about -100 dB they are set to rest and left out,
+ * four at a time, until the mallet or bow wakes the body again. (Off only
+ * to test that skipping changes nothing that can be heard.) */
+int engine_perc_skip = 1;
+#define PERC_REST 1e-10f /* a mode's energy at rest (|z| 1e-5) */
 
 static void perc_init_models(void)
 {
@@ -1829,43 +1855,77 @@ static void perc_setup(PercVoice *v, String *st, const int *P, float hz, float b
     float hf = model == PC_DRUM ? m->hf : m->hf * (1.f - 0.75f * fminf(1.f, fmaxf(0.f, (P[SP_DECAY] - 70) / 30.f)));
     float pos = P[SP_POS] / 100.f, bright = P[SP_BRIGHT] / 100.f;
     int sing = P[SP_HARM] + (st->over ? 1 : 0); /* the mode the bow favours; a touch moves it up */
-    int n = 0;
-    for (int k = 0; k < m->n + m->pairs && n < PMAX; k++) {
-        int i = k < m->n ? k : k - m->n; /* the twins follow the modes */
-        /* a pair straddles its note, half the split below and half above, so
-         * it beats around the pitch rather than pulling it sharp */
-        float r = powf(m->r[i], stretch), half = i < m->pairs ? 0.5f * m->split : 0.f;
-        float f = hz * r + (k < m->n ? -half : half);
-        if (f > 0.42f * sr)
-            continue;
-        float t60 = ring * powf(r, -0.7f * hf);
-        if (st->over && i == 0) /* a finger on the fundamental's antinode: it dies, the next mode rings */
-            t60 = fminf(t60, 0.05f);
-        float rad = fminf(powf(10.f, -3.f / (t60 * sr)), 0.9999998f); /* never 1: rounding must not grow it */
-        float w = 6.2831853f * f / sr;
-        v->ar[n] = rad * cosf(w), v->ai[n] = rad * sinf(w), v->w[n] = w;
-        v->phi[n] = 0.2f + 0.8f * fabsf(cosf(3.14159265f * i * pos * 0.9f)); /* where it is struck */
-        v->bow_w[n] = v->phi[n] * (i == sing ? 1.f : 0.3f);
-        v->out[n] = m->g[i] * (k < m->n ? 1.f : 0.85f) / sqrtf(r);
-        n++;
+    int key[7] = {perc_gen, model, P[SP_STIFF], P[SP_DECAY], P[SP_POS], sing, st->over};
+    int fresh = memcmp(key, v->key, sizeof key) || memcmp(m->r, v->r_was, sizeof v->r_was);
+#ifdef PERC_NOCACHE
+    fresh = 1;
+#endif
+    if (fresh) {
+        memcpy(v->key, key, sizeof key);
+        memcpy(v->r_was, m->r, sizeof v->r_was);
+        /* low to high, each twin beside its mode, so the highest (which die
+         * first) can be left out together; a mode always keeps its place */
+        int n = 0;
+        for (int i = 0; i < m->n && n < PMAX; i++)
+            for (int t = 0; t < (i < m->pairs ? 2 : 1) && n < PMAX; t++, n++) {
+                /* a pair straddles its note, half the split below and half above, so
+                 * it beats around the pitch rather than pulling it sharp */
+                float r = powf(m->r[i], stretch), half = i < m->pairs ? 0.5f * m->split : 0.f;
+                v->rr[n] = r;
+                v->off[n] = t ? half : -half;
+                float t60 = ring * powf(r, -0.7f * hf);
+                if (st->over && i == 0) /* a finger on the fundamental's antinode: it dies, the next mode rings */
+                    t60 = fminf(t60, 0.05f);
+                v->rad[n] = fminf(powf(10.f, -3.f / (t60 * sr)), 0.9999998f); /* never 1: rounding must not grow it */
+                v->phi[n] = 0.2f + 0.8f * fabsf(cosf(3.14159265f * i * pos * 0.9f)); /* where it is struck */
+                v->bow_w[n] = v->phi[n] * (i == sing ? 1.f : 0.3f);
+                v->out[n] = m->g[i] * (t ? 0.85f : 1.f) / sqrtf(r);
+            }
+        v->nm = n;
     }
-    v->n = n;
+    if (fresh || hz != v->hz) { /* the turning, from the pitch; one beyond the hearing range is silent */
+        v->hz = hz;
+        int n = v->nm;
+        for (int k = 0; k < n; k++) {
+            float f = hz * v->rr[k] + v->off[k];
+            if (f > 0.42f * sr || f <= 0.f) {
+                v->ar[k] = v->ai[k] = v->pw[k] = 0.f;
+                continue;
+            }
+            float w = 6.2831853f * f / sr;
+            v->ar[k] = v->rad[k] * cosf(w), v->ai[k] = v->rad[k] * sinf(w);
+            v->pw[k] = v->phi[k] / w;
+        }
+        for (int k = n; k < ((n + 3) & ~3); k++) /* padding: modes that never move */
+            v->ar[k] = v->ai[k] = v->phi[k] = v->bow_w[k] = v->out[k] = v->pw[k] = 0.f;
+        v->n = (n + 3) & ~3;
+    }
+    int n = v->nm;
     /* the body's own limiter: strike after strike on a long ring piles up
      * energy; above a ceiling all the modes ease down together (within
      * about 10 ms), so it never builds too far, and the tone stays */
     if (st->env > PERC_CEIL) {
         float g = powf(PERC_CEIL / st->env, 0.15f);
         for (int k = 0; k < n; k++)
-            st->mz[k][0] *= g, st->mz[k][1] *= g;
+            st->zr[k] *= g, st->zi[k] *= g;
         st->env *= g;
     }
-    for (int k = 0; k < n; k++) { /* and a last guard: no mode ever runs away */
-        float e = st->mz[k][0] * st->mz[k][0] + st->mz[k][1] * st->mz[k][1];
+    /* driven: struck, bowed or fed by the sympathetic strings, when every
+     * mode may wake (the bridge reaches modes that are at rest) */
+    int driven = !engine_perc_skip || st->hm_on || bow_amt > 1e-3f || st->inj_pk > 0.f, top = 0;
+    st->inj_pk = 0.f;
+    for (int k = 0; k < v->n; k++) { /* and a last guard: no mode ever runs away */
+        float e = st->zr[k] * st->zr[k] + st->zi[k] * st->zi[k];
         if (e > 400.f || !(e == e)) {
             float g = e == e ? 20.f / sqrtf(e) : 0.f;
-            st->mz[k][0] *= g, st->mz[k][1] *= g;
+            st->zr[k] *= g, st->zi[k] *= g;
         }
+        if (driven || e > PERC_REST)
+            top = k + 1;
     }
+    v->nact = (top + 3) & ~3;
+    for (int k = v->nact; k < PMAX; k++) /* the silent top, at rest */
+        st->zr[k] = st->zi[k] = 0.f;
     /* MALLET: the contact lasts 4 ms (felt) down to 0.3 ms (hard), a spring for a mass of 1 */
     float tau = 0.004f * powf(0.07f, bright);
     v->K = 9.8696f / (tau * tau);
@@ -1883,7 +1943,8 @@ static void perc_tick(String *st, const PercVoice *v, float inj, float *py, floa
     if (st->hm_on) { /* the mallet against the surface */
         float u = 0.f;
         for (int k = 0; k < v->n; k++)
-            u += v->phi[k] * st->mz[k][1] / v->w[k] * T; /* displacement: Im(z) / omega (per sample units) */
+            u += v->pw[k] * st->zi[k]; /* displacement: Im(z) / omega */
+        u *= T; /* (per sample units) */
         float d = st->hm_y - u;
         if (d > 0.f)
             F = v->K * st->hm_hard * d * (1.f + d * 4000.f); /* the felt stiffens as it is pressed */
@@ -1902,22 +1963,48 @@ static void perc_tick(String *st, const PercVoice *v, float inj, float *py, floa
         Fb = v->bow_p * 900.f * dv / (q * q); /* the bow table: grips when slow, lets go when fast */
     }
     float o = 0.f, y = 0.f, ud = 0.f, fs = F * T + inj * 0.02f, fb = Fb * T;
-    for (int k = 0; k < v->n; k++) { /* each mode turns and shrinks, pushed by mallet and bow */
-        float zr = st->mz[k][0], zi = st->mz[k][1];
+    st->inj_pk = fmaxf(st->inj_pk, fabsf(inj));
+    /* all the modes while a mallet is on (it may have struck mid-block),
+     * otherwise only those still sounding; each turns and shrinks, pushed by
+     * mallet and bow */
+    int cnt = st->hm_on ? v->n : v->nact;
+#ifdef __ARM_NEON
+    float32x4_t O = vdupq_n_f32(0.f), Y = O, U = O, vf = vdupq_n_f32(fs), vb = vdupq_n_f32(fb);
+    for (int k = 0; k < cnt; k += 4) {
+        float32x4_t zr = vld1q_f32(st->zr + k), zi = vld1q_f32(st->zi + k);
+        float32x4_t ar = vld1q_f32(v->ar + k), ai = vld1q_f32(v->ai + k);
+        float32x4_t ph = vld1q_f32(v->phi + k), bw = vld1q_f32(v->bow_w + k);
+        float32x4_t nr = vmlaq_f32(vmlaq_f32(vmlsq_f32(vmulq_f32(ar, zr), ai, zi), ph, vf), bw, vb);
+        float32x4_t ni = vmlaq_f32(vmulq_f32(ar, zi), ai, zr);
+        vst1q_f32(st->zr + k, nr);
+        vst1q_f32(st->zi + k, ni);
+        O = vmlaq_f32(O, vld1q_f32(v->out + k), nr);
+        Y = vmlaq_f32(Y, ph, ni);
+        U = vmlaq_f32(U, bw, nr);
+    }
+    float32x2_t o2 = vadd_f32(vget_low_f32(O), vget_high_f32(O)), y2 = vadd_f32(vget_low_f32(Y), vget_high_f32(Y)),
+                u2 = vadd_f32(vget_low_f32(U), vget_high_f32(U));
+    o = vget_lane_f32(vpadd_f32(o2, o2), 0);
+    y = vget_lane_f32(vpadd_f32(y2, y2), 0);
+    ud = vget_lane_f32(vpadd_f32(u2, u2), 0);
+#else
+    for (int k = 0; k < cnt; k++) {
+        float zr = st->zr[k], zi = st->zi[k];
         float nr = v->ar[k] * zr - v->ai[k] * zi + v->phi[k] * fs + v->bow_w[k] * fb;
         float ni = v->ar[k] * zi + v->ai[k] * zr;
-        st->mz[k][0] = nr, st->mz[k][1] = ni;
+        st->zr[k] = nr, st->zi[k] = ni;
         o += v->out[k] * nr;
         y += v->phi[k] * ni;
         ud += v->bow_w[k] * nr;
     }
+#endif
     st->bow_ud = ud;
     o *= 0.35f;
     float a = fabsf(o);
     if (a > PERC_CEIL) { /* the limiter, each sample: the peak held to the ceiling, the modes eased down */
         o *= PERC_CEIL / a;
-        for (int k = 0; k < v->n; k++)
-            st->mz[k][0] *= 0.998f, st->mz[k][1] *= 0.998f;
+        for (int k = 0; k < cnt; k++)
+            st->zr[k] *= 0.998f, st->zi[k] *= 0.998f;
     }
     if (v->sizzle > 0.f) /* a rattle that follows how loud it rings */
         o *= 1.f + v->sizzle * 1.5f * fnoise() * fminf(1.f, fabsf(o) * 3.f);
@@ -2209,7 +2296,7 @@ void engine_render(int16_t *out, int frames)
     float sb_a1[NS][2], sb_a2 = sub_r * sub_r, sb_amp[NS][2], sb_k[NS];
     WindVoice wv[NS];
     int wv_on[NS];
-    PercVoice pv[NS];
+    static PercVoice pv[NS]; /* kept: the modes are worked out again only on a change */
     int pv_on[NS];
     /* binaural: the beat in hertz; LOCK puts it on the nearest power-of-two
      * multiple of the beat rate, so it pulses with the rhythm */
@@ -2357,7 +2444,8 @@ void engine_render(int16_t *out, int frames)
                 st->ap[0][0] = st->ap[0][1] = st->ap[1][0] = st->ap[1][1] = 0.f;
                 st->burst = 0;
                 st->art_t = -1.f;
-                memset(st->mz, 0, sizeof st->mz);
+                memset(st->zr, 0, sizeof st->zr);
+                memset(st->zi, 0, sizeof st->zi);
                 st->hm_on = 0;
             }
             wv_on[s] = vkind(st->voice_was) == 1; /* the voice sounding now, until a change has faded */
@@ -2873,6 +2961,15 @@ void engine_init(int sample_rate)
     memset(bin_lp, 0, sizeof bin_lp);
     f_ic1[0] = f_ic1[1] = f_ic2[0] = f_ic2[1] = 0.f;
     memset(flash, 0, sizeof flash);
+    master_g = play_g = 0.f;
+    perc_gen++;
+    fdn_mod = 0.f;
+    fdn_w = la_w = 0;
+    dly_w = 0;
+    memset(pre_i, 0, sizeof pre_i);
+    memset(lfo_rand, 0, sizeof lfo_rand);
+    memset(lfo_cycle, 0, sizeof lfo_cycle);
+    bin_journey_t = 0.0;
     rng = 0x9e3779b9u;
 }
 

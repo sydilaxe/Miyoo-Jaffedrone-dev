@@ -40,7 +40,7 @@ jobs:
       - name: Build and run the test harness
         run: |
           touch src/font_data.h src/logo_data.h dist/Jaffedrone/icon.png dist/Jaffedrone/splash.jdi
-          make build/jd_test
+          make build/jd_test build/jd_bench
           mkdir -p build/test
           build/jd_test build/test | tee build/test/results.txt
       - name: The manual is up to date
@@ -48,6 +48,8 @@ jobs:
       - name: Check the results
         run: |
           r=build/test/results.txt
+          grep -q "struck skipping: .*(want over 80: 1)" $r
+          test "$(grep -c '^dsp WORST .*sounding 1' $r)" -eq 3
           grep -q "0 full-scale samples (want 0)" $r
           # every wind exciter in tune in every material
           test "$(grep -c '^wind .*12/12 in tune' $r)" -eq 7

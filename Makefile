@@ -45,6 +45,14 @@ build/jd_test: $(SRC) src/main_test.c $(HDR)
 	@mkdir -p build
 	cc $(CFLAGS) -o $@ $(SRC) src/main_test.c -lm
 
+build/jd_bench: $(SRC) src/main_bench.c $(HDR)
+	@mkdir -p build
+	cc $(CFLAGS) -o $@ $(SRC) src/main_bench.c -lm
+
+# the load of many voice mixtures at their worst, heaviest first
+bench: build/jd_bench
+	build/jd_bench
+
 test: build/jd_test
 	@mkdir -p build/test
 	build/jd_test build/test
@@ -65,7 +73,7 @@ install: all
 clean:
 	rm -rf build $(APP)/jaffedrone
 
-.PHONY: all test zip install clean
+.PHONY: all test bench zip install clean
 
 # host-side wifi sync interop check (run alongside HI5's)
 build/jd_synctest: $(SRC) src/main_synctest.c $(HDR)

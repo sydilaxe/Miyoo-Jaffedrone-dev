@@ -104,6 +104,39 @@ void jdlog_set_level(int l)
         fflush(f);
 }
 
+/* a number from a system file, or -1 (the processor's clock, temperature) */
+static long read_num(const char *path)
+{
+    FILE *p = fopen(path, "r");
+    long v = -1;
+    if (p) {
+        if (fscanf(p, "%ld", &v) != 1)
+            v = -1;
+        fclose(p);
+    }
+    return v;
+}
+
+/* the system's state: the processor's clock and temperature, the cores
+ * running. A clock or core count that drops mid-session explains dropouts
+ * that load alone does not. */
+static void sys_state(char *out, int n)
+{
+    long khz = read_num("/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq");
+    long temp = read_num("/sys/class/thermal/thermal_zone0/temp");
+    char cores[16] = "?";
+    FILE *p = fopen("/sys/devices/system/cpu/online", "r");
+    if (p) {
+        if (!fgets(cores, sizeof cores, p))
+            strcpy(cores, "?");
+        cores[strcspn(cores, "\n")] = 0;
+        fclose(p);
+    }
+    if (temp > 1000)
+        temp /= 1000; /* some kernels give millidegrees */
+    snprintf(out, n, "cpu %ld MHz %ld C cores %s", khz > 0 ? khz / 1000 : -1, temp, cores);
+}
+
 /* status: audio load and lateness, levels, the leveller, voices; then hints */
 static void status(AudioTiming *t, double secs)
 {
@@ -114,10 +147,14 @@ static void status(AudioTiming *t, double secs)
     double rms = s.frames ? sqrt(s.rms_acc / s.frames) : 0, lev = s.frames ? s.lev_acc / s.frames : 0;
     const SyncStatus *ss = sync_status();
     double ui_avg = t && t->ui_frames ? (double)t->ui_ms_sum / t->ui_frames : 0;
-    put("STAT", "load avg %.0f%% peak %.0f%% late %u | peak %.2f rms %.3f clips %u | leveller avg %.1f min %.1f | screen "
-                "avg %.0f ms max %u ms | audio %s | sync %s",
-        load, peak_load, t ? t->late : 0, s.peak, rms, s.clips, lev, s.lev_min, ui_avg, t ? t->ui_ms_max : 0,
-        t && t->rt ? "realtime" : "normal", ss->leading ? "lead" : ss->have_leader ? "follow" : "-");
+    char sys[64];
+    sys_state(sys, sizeof sys);
+    put("STAT", "load avg %.0f%% peak %.0f%% late %u gap max %.0f ms calls %.1f/s of %.1f | peak %.2f rms %.3f clips %u | leveller avg %.1f "
+                "min %.1f | screen avg %.0f ms max %u ms | audio %s | %s | sync %s",
+        load, peak_load, t ? t->late : 0, t ? t->gap_max_us / 1000.0 : 0, t && secs > 0 ? t->calls / secs : 0,
+        t && t->buffer_us ? 1e6 / t->buffer_us : 0, s.peak, rms, s.clips, lev, s.lev_min, ui_avg,
+        t ? t->ui_ms_max : 0, t && t->rt ? "realtime" : "normal", sys,
+        ss->leading ? "lead" : ss->have_leader ? "follow" : "-");
     if (level == LOG_DETAIL)
         for (int v = 0; v < NS; v++) {
             if (!song.on[v] || s.f_target[v] <= 0.f)
@@ -143,7 +180,6 @@ static void status(AudioTiming *t, double secs)
         idle = !live.latch[v];
     if (lev > 27.f && !idle && live.playing)
         put("HINT", "the sound is very quiet and is being lifted fully: raise LEVEL, BOW or BREATH, or TONE");
-    (void)secs;
     if (t)
         memset(t, 0, offsetof(AudioTiming, buffer_us)); /* the counters; the buffer and rt stay */
     fflush(f);

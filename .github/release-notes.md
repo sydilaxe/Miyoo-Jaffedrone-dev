@@ -3,6 +3,13 @@ Jaffedrone test build for the Miyoo Mini Plus (OnionOS).
 **Install:** unzip `Jaffedrone-miyoo.zip` at the root of the SD card (it contains `App/Jaffedrone/`),
 then open **Apps → Jaffedrone**.
 
+**New in 0.11.2**
+- Lighter struck voices with the same sound: their modes are worked out only when something changes, run
+  four at a time on the Miyoo's vector unit, and modes that have died away are rested.
+- The log now shows the processor's clock, temperature and cores, and how regularly the audio is called,
+  to catch what causes crackles at a modest load.
+- `make bench` ranks 32 voice mixtures at their worst.
+
 **New in 0.11.1**
 - More room for sound: the projection is gone, the screen runs below the audio and slows to 20 frames a
   second when the sound is working hard. (A heavy patch of struck voices could crackle before.)
