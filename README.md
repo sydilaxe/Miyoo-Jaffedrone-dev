@@ -131,8 +131,9 @@ strings, and **LATCH**, where the rings rest and you play:
   on the MIX page, in place of GATE).
 - A pluck starts at once; a bow swells in over the string's **ATTACK** (0.05 to 10 s, 1.8 s at first): **Y /
   X** make the selected string's ATTACK shorter / longer. **A** lets every string go.
-- Hold **B** and the selected droning string sounds its next harmonic up (a wind voice overblows); let go
-  and it comes back.
+- Hold **B**, or **L1 and R1** together (either first), and the selected droning string sounds its next
+  harmonic up (a wind voice overblows); let go and it comes back. L1 on a droning string lets it go only
+  when released, so R1 can join it for a harmonic instead.
 - Each column shows a board with a shed-roof top that fills while its string drones and drains as it fades,
   with the word PLUCKED, BOWED or FADING.
 
@@ -338,7 +339,7 @@ on the shoulder buttons.
 | L1 (tap) | strike the selected string like a hammered dulcimer: a bright hammer hit with a light bounce (WIND: a hard attack that overblows for a moment and settles). A tap is shorter than about a tenth of a second |
 | L1 (hold briefly) | pluck the selected string by hand (WIND: tongue a note); it sounds once the hold is clear, about 0.1 s in |
 | R1 (hold) | bow the selected string by hand: the bow is drawn slowly, swelling over about two seconds and brightening as it bites, then sings steadily while R1 is held (WIND: blow) |
-| hold L1, then R1 | bow with a harmonic touch: the next harmonic up sings (WIND: overblow, an octave up, a twelfth for REED) |
+| L1 + R1, either first | bow with a harmonic touch: the next harmonic up sings (WIND: overblow, an octave up, a twelfth for REED); bowing with R1, add L1 for overblows as you bow |
 | L2 + up / down | more / fewer steps |
 | L2 + left / right | step length (right = faster) |
 | L2 + X | more pulses |

@@ -1367,6 +1367,65 @@ int main(int argc, char **argv)
         printf("voice switch: %.0f%% of the sound still there 8 ms after the change (want over 75%%: a fade, not a "
                "cut)\n", 100.0 * after / before);
     }
+    /* both shoulders, either order, sound the harmonic (or overblow) of the
+     * selected string: in LATCH over its drone, in RINGS over the hand bow */
+    {
+        song_default();
+        engine_init(RATE);
+        engine_set_playing(1);
+        song.gp[GP_PLAYMODE] = PLAY_LATCH;
+        song.gp[GP_CHANGES] = 0, song.gp[GP_DRIFT] = 0, song.lfo[0][LP_DEPTH] = 0;
+        song.fx[FX_SCOUNT] = 0, song.fx[FX_DMIX] = song.fx[FX_VSEND] = 0;
+        int16_t buf[2 * 480];
+        ui_tick(300); /* well after any earlier L1 (a press within 30 ms of a release is switch bounce) */
+        ui_button(BTN_R1, 1); /* R1 down: the selected string bows on */
+        engine_render(buf, 480);
+        int sel = -1;
+        for (int v = 0; v < NS; v++)
+            if (live.latch[v])
+                sel = v;
+        for (int v = 0; v < NS; v++) /* only the selected string sounds, for a clean pitch */
+            song.on[v] = v == sel;
+        engine_render(pcm, RATE * 3);
+        double f0 = hz_yin(pcm, RATE * 2, RATE / 4);
+        ui_tick(300);
+        ui_button(BTN_L1, 1); /* add L1 */
+        engine_render(pcm, RATE * 2);
+        double f1 = hz_yin(pcm, RATE, RATE / 4);
+        ui_button(BTN_L1, 0);
+        ui_button(BTN_R1, 0);
+        engine_render(pcm, RATE * 2);
+        double f2 = hz_yin(pcm, RATE, RATE / 4);
+        int still = sel >= 0 && live.latch[sel] == LATCH_BOW;
+        ui_tick(300);
+        ui_button(BTN_L1, 1); /* L1 first (held: no tap), then R1 */
+        ui_tick(200);
+        ui_button(BTN_R1, 1);
+        engine_render(pcm, RATE * 2);
+        double f3 = hz_yin(pcm, RATE, RATE / 4);
+        ui_button(BTN_R1, 0);
+        ui_button(BTN_L1, 0);
+        engine_unlatch_all();
+        song.gp[GP_PLAYMODE] = PLAY_RINGS;
+        /* RINGS: hold R1 (a flute blown by hand), then add L1: it overblows */
+        for (int v = 0; v < NS; v++)
+            song.sp[v][SP_VOICE] = 1 + EX_FLUTE, song.sp[v][SP_PON] = song.sp[v][SP_BON] = 0, song.sp[v][SP_BOW] = 0;
+        engine_render(pcm, RATE);
+        ui_tick(300);
+        ui_button(BTN_R1, 1);
+        engine_render(pcm, RATE * 2);
+        ui_tick(300);
+        double w0 = hz_yin(pcm, RATE, RATE / 4);
+        ui_button(BTN_L1, 1);
+        engine_render(pcm, RATE * 2);
+        double w1 = hz_yin(pcm, RATE, RATE / 4);
+        ui_button(BTN_L1, 0);
+        ui_button(BTN_R1, 0);
+        ui_tick(300);
+        printf("both shoulders: LATCH R1 then L1 %.1f -> %.1f Hz (x%.2f), let go %.1f Hz, still droning %d; L1 then R1 x%.2f; "
+               "RINGS R1 then L1 %.1f -> %.1f Hz (x%.2f)\n",
+               f0, f1, f1 / f0, f2, still, f3 / f0, w0, w1, w1 / w0);
+    }
     /* a v0.8 song (JDR14) loads: LATCH and RELEASE kept, the bow ATTACK new */
     {
         struct {

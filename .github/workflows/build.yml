@@ -68,6 +68,7 @@ jobs:
           grep -q "tap and hold: tap -> STRIKE, 60 ms into a hold -> nothing yet, the hold -> PLUCK" $r
           grep -q "strike: .*brighter: 1)" $r
           grep -q "wind hard attack: .*(x2.0" $r
+          grep -q "both shoulders: LATCH R1 then L1 .*(x2.00), let go .*, still droning 1; L1 then R1 x2.00; RINGS R1 then L1 .*(x2.00)" $r
           grep -q "latch checks: silent 1, starts 1, drones 1, fades 1, bow swells 1, wind drones 1 and fades 1" $r
           # strings and winds side by side; a v0.5 WIND song loads as winds
           grep -q "v0.5 WIND song load 1 voices DOUBLE DOUBLE body 6 (want GLASS 6)" $r

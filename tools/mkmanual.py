@@ -404,9 +404,10 @@ def build(out):
                       (num(2), B("R1") + " held",
                        "bow it: the bow is drawn in slowly, swelling over about two seconds and brightening as "
                        "it bites, and sings while you hold (wind: blow)"),
-                      ("", "hold " + B("L1") + ", then " + B("R1"),
+                      ("", B("L1") + " + " + B("R1") + ", either first",
                        "bow with a light touch at a node: the next harmonic up sings (wind: overblow, an octave "
-                       "up, a twelfth for the reed)")], widths=(9 * mm, 26 * mm, None)),
+                       "up, a twelfth for the reed). Bowing with " + B("R1") + ", add " + B("L1") + " for "
+                       "overblows as you bow")], widths=(9 * mm, 26 * mm, None)),
                Spacer(1, 6),
                Paragraph("The bowed string's column lights while the bow is on it.", SMALL))]
     s += [Spacer(1, 8), Paragraph("Quick sound changes: hold R2", H2),
@@ -432,7 +433,9 @@ def build(out):
                        "pluck (a tap strikes) / bow it on: it drones. Either again: it lets go and fades"),
                       (num(4), B("▲") + " " + B("▼"), "that string's RELEASE, 0.05 s to 20 s"),
                       (num(5), B("A"), "let every string go"),
-                      (num(6), B("B") + " held", "the next harmonic up on the droning string (wind: overblow)"),
+                      (num(6), B("B") + " held, or " + B("L1") + " + " + B("R1"),
+                       "the next harmonic up on the droning string (wind: overblow); with both shoulders, "
+                       "either first, it lasts while both are held"),
                       (num(7), B("Y") + " / " + B("X"), "that string's bow ATTACK, shorter / longer, 0.05 s to "
                                                          "10 s")], widths=(9 * mm, 26 * mm, None)),
                Spacer(1, 6),
@@ -548,7 +551,7 @@ def build(out):
                       (B("SELECT"), "next chord"),
                       (B("L1"), "tap: strike; hold: pluck (wind: hard attack / tongue); LATCH: on / let go"),
                       (B("R1"), "bow while held (wind: blow); LATCH: bow on / let go"),
-                      (B("L1") + " then " + B("R1"), "harmonic (wind: overblow)"),
+                      (B("L1") + " + " + B("R1"), "harmonic (wind: overblow), either first"),
                       ("tap " + B("L2"), "quiet view"),
                       (B("L2") + " + ...", "shape the ring, mute (" + B("A") + ")"),
                       (B("R2") + " + ...", "scale, tone, chance, body"),

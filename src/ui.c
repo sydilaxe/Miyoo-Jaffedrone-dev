@@ -51,7 +51,8 @@ static int l2_used, r2_used;
 static int bowing = -1; /* the string bowed by hand (R1 held) */
 static int latch_on(void) { return song.gp[GP_PLAYMODE] == PLAY_LATCH; }
 static void set_playmode(int latch);
-static int harm_s = -1; /* LATCH: the string sounding a harmonic while B is held */
+static int harm_s = -1; /* LATCH: the string sounding a harmonic while B, or L1 and R1, are held */
+static int harm_both;   /* ... started by both shoulders: it ends when either lets go */
 #define TAP_MS 110 /* L1 released sooner is a tap */
 static int l1_pending, l1_s;
 static int l1_down_ms;
@@ -639,10 +640,23 @@ static void action(int b, int repeats)
         else if (latch_on()) { /* LATCH: L1 plucks (a tap strikes), R1 bows; again, it lets go */
             if (repeats)
                 return;
-            if (b == BTN_R1 || live.latch[cur_s])
-                do_latch(cur_s, b == BTN_R1 ? LATCH_BOW : LATCH_PLUCK);
-            else
-                l1_pending = 1, l1_s = cur_s, l1_down_ms = now_ms; /* tap or hold: decided on release or at TAP_MS */
+            if (held[b == BTN_L1 ? BTN_R1 : BTN_L1]) { /* both shoulders, either order: harmonic / overblow */
+                if (l1_pending) { /* L1 was down first: a silent string is plucked on, a droning one kept */
+                    if (!live.latch[l1_s])
+                        fire_l1(0);
+                    l1_pending = 0;
+                }
+                if (harm_s >= 0 && harm_s != cur_s)
+                    engine_overblow(harm_s, 0);
+                harm_s = cur_s, harm_both = 1;
+                engine_overblow(cur_s, 1);
+                return;
+            }
+            if (b == BTN_R1)
+                do_latch(cur_s, LATCH_BOW);
+            else /* L1: a tap strikes, a hold plucks, on a droning string either lets go; decided on
+                  * release or at TAP_MS, so R1 joining in can make it a harmonic instead */
+                l1_pending = 1, l1_s = cur_s, l1_down_ms = now_ms;
         }
         else if (b == BTN_L1) {
             if (bowing >= 0) /* already bowing: L1 overblows / touches a harmonic */
@@ -769,7 +783,9 @@ void ui_button(int b, int down)
         quiet = !quiet;
         return;
     }
-    if (b == BTN_B && !down && harm_s >= 0) { /* LATCH: letting go of B ends the harmonic */
+    if (!down && harm_s >= 0 && (b == BTN_B ? !harm_both : harm_both && (b == BTN_L1 || b == BTN_R1))) {
+        /* LATCH: letting go of B (or of either shoulder) ends the harmonic */
+        harm_both = 0;
         ui_lock();
         engine_overblow(harm_s, 0);
         ui_unlock();
@@ -828,7 +844,9 @@ void ui_button(int b, int down)
 void ui_tick(int ms)
 {
     now_ms += ms;
-    if (l1_pending && held[BTN_L1] && now_ms - l1_down_ms >= TAP_MS) { /* still held: a pluck */
+    /* still held: a pluck. On a droning string L1 lets go only on release,
+     * so R1 can join in for a harmonic however long L1 is held */
+    if (l1_pending && held[BTN_L1] && now_ms - l1_down_ms >= TAP_MS && !(latch_on() && live.latch[l1_s])) {
         ui_lock();
         fire_l1(0);
         ui_unlock();

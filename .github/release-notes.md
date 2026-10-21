@@ -3,6 +3,10 @@ Jaffedrone test build for the Miyoo Mini Plus (OnionOS).
 **Install:** unzip `Jaffedrone-miyoo.zip` at the root of the SD card (it contains `App/Jaffedrone/`),
 then open **Apps → Jaffedrone**.
 
+**New in 0.9.1**
+- Overblows and harmonics with both shoulders in either order: bowing with R1, add L1 (also in LATCH,
+  where B held does the same).
+
 **New in 0.9**
 - Tap L1 to strike a string like a hammered dulcimer (a wind voice: a hard overblown attack); hold it
   briefly to pluck.
