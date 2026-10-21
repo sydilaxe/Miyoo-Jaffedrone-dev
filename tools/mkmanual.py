@@ -387,21 +387,21 @@ def build(out):
                       (num(3), B("◀") + " " + B("▶"), "step length (right is faster): 1/16 to 2 bars"),
                       (num(4), B("X"), "more pulses"),
                       (num(5), B("Y"), "rotate back"),
-                      (num(6), B("A"), "mute or unmute the string (a red bar marks it)"),
-                      ("", "tap " + B("L2"), "the quiet view (see The quiet view)")],
+                      (num(6), B("A"), "mute or unmute the string (a red bar marks it)")],
                      widths=(9 * mm, 22 * mm, None))), PageBreak()]
 
     # -------------------------------------------------- PLAY: by hand
     s += [Paragraph("Playing by hand", H1),
           Paragraph("The shoulder buttons play the string selected on PLAY, over whatever its rings are doing. "
                     "A wind voice is tongued and blown instead.", P),
-          side(Miyoo("play_bow", {"L1": 1, "R1": 2}),
-               table([(num(1), "tap " + B("L1"),
-                       "strike the selected string like a hammered dulcimer: a bright hammer hit that bounces "
-                       "(wind: a hard attack that overblows for a moment and settles)"),
-                      ("", "hold " + B("L1") + " briefly", "pluck it (wind: tongue a note); a tap is under about a "
-                                                          "tenth of a second"),
-                      (num(2), B("R1") + " held",
+          side(Miyoo("play_bow", {"L1": 1, "L2": 2, "R1": 3}),
+               table([(num(1), B("L1"), "pluck the selected string, the moment you press (wind: tongue a note; "
+                                        "struck: the mallet)"),
+                      (num(2), B("L2"),
+                       "drop a dulcimer mallet on it: a bright hit, then the mallet bounces, each rebound lower "
+                       "and sooner, until it rests (wind: a flutter tongue, the breath rolling \"frrr\" and "
+                       "settling; struck: a hard mallet, bouncing). Held, " + B("L2") + " still shapes the ring"),
+                      (num(3), B("R1") + " held",
                        "bow it: the bow is drawn in slowly, swelling over about two seconds and brightening as "
                        "it bites, and sings while you hold (wind: blow)"),
                       ("", B("L1") + " + " + B("R1") + ", either first",
@@ -430,7 +430,8 @@ def build(out):
                                                              "the SONG page)"),
                       (num(2), B("◀") + " " + B("▶"), "choose a string"),
                       (num(3), B("L1") + " / " + B("R1"),
-                       "pluck (a tap strikes) / bow it on: it drones. Either again: it lets go and fades"),
+                       "pluck / bow it on: it drones (" + B("L2") + ": the mallet drops it on). Again: it lets "
+                       "go and fades"),
                       (num(4), B("▲") + " " + B("▼"), "that string's RELEASE, 0.05 s to 20 s"),
                       (num(5), B("A"), "let every string go"),
                       (num(6), B("B") + " held, or " + B("L1") + " + " + B("R1"),
@@ -448,7 +449,7 @@ def build(out):
           Paragraph("Press " + B("START") + " + " + B("A") + ". Bow string 1 with " + B("R1") + " for a low "
                     "drone, move to string 3 and pluck it with " + B("L1") + ", then press " + B("L1") + " on "
                     "string 3 again to let it ring away. Raise string 5's RELEASE with " + B("▲") + " to ten "
-                    "seconds or more for a long dying shimmer. Tap " + B("L1") + " on string 4 to strike it, "
+                    "seconds or more for a long dying shimmer. Tap " + B("L2") + " on string 4 to drop the mallet on it, "
                     "and hold " + B("B") + " to let its harmonic sing. Lower string 1's ATTACK with " + B("Y") +
                     " for a bow that bites at once.", P), PageBreak()]
 
@@ -503,7 +504,7 @@ def build(out):
                     "so the modes it meets grow until they sing, as on a rubbed bowl or a bowed cymbal). "
                     "Every voice can be struck and bowed.", P),
           side(Miyoo("wind_play", {"L1": 1, "R1": 2, "B": 3}),
-               table([(num(1), B("L1"), "strike (a tap: a hard mallet, hit harder)"),
+               table([(num(1), B("L1"), "strike (" + B("L2") + ": a hard mallet, dropped, bouncing)"),
                       (num(2), B("R1"), "bow: the body catches and sings"),
                       (num(3), B("L1") + " + " + B("R1") + ", " + B("B"),
                        "a touch: the fundamental is damped and the next mode rings and sings")],
@@ -556,10 +557,11 @@ def build(out):
 
     # -------------------------------------------------- quiet view
     s += [Paragraph("The quiet view", H1),
-          side(Miyoo("quiet", {"L2": 1}),
-               Paragraph("Tap " + B("L2") + " on PLAY for the quiet view: the five strings across the screen "
-                         "with their rings, and only the chord in words. Tap again to come back.", P),
-               table([(num(1), "tap " + B("L2"), "the quiet view on / off")], widths=(9 * mm, 20 * mm, None))),
+          side(Miyoo("quiet", {"START": 1, "L2": 1}),
+               Paragraph(B("START") + " + " + B("L2") + " on PLAY for the quiet view: the five strings across "
+                         "the screen with their rings, and only the chord in words. Again to come back.", P),
+               table([(num(1), B("START") + " + " + B("L2"), "the quiet view on / off")],
+                     widths=(9 * mm, 24 * mm, None))),
           Spacer(1, 10)]
 
     # -------------------------------------------------- binaural & tunings
@@ -598,10 +600,11 @@ def build(out):
                       ("LATCH " + B("B") + " / " + B("Y") + B("X"), "harmonic (held) / bow attack"),
                       (B("START") + " + " + B("SELECT"), "the log: OFF / BASIC / DETAIL"),
                       (B("SELECT"), "next chord"),
-                      (B("L1"), "tap: strike; hold: pluck (wind: hard attack / tongue); LATCH: on / let go"),
+                      (B("L1"), "pluck (wind: tongue); LATCH: on / let go"),
+                      (B("L2"), "drop the dulcimer mallet (wind: flutter tongue)"),
                       (B("R1"), "bow while held (wind: blow); LATCH: bow on / let go"),
                       (B("L1") + " + " + B("R1"), "harmonic (wind: overblow), either first"),
-                      ("tap " + B("L2"), "quiet view"),
+                      (B("START") + " + " + B("L2"), "quiet view"),
                       (B("L2") + " + ...", "shape the ring, mute (" + B("A") + ")"),
                       (B("R2") + " + ...", "scale, tone, chance, body"),
                       (B("MENU"), "leave")], widths=(36 * mm, None)), dw=60 * mm),

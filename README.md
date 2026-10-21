@@ -96,7 +96,7 @@ struck); Y / X alone step one at a time.
 
 - **The mallet** is a mass on a spring that meets the surface where it strikes, pushes while compressed and
   leaves on its own: a hard mallet makes a short, bright contact, a soft one a long, dark push, and it can
-  bounce back for a second touch. A tap of L1 is a hard mallet, hit harder.
+  bounce back for a second touch. L2 drops a hard mallet that bounces, each rebound lower and sooner.
 - **The bow** is stick-slip friction at a point: the surface catches on the bow and slips, and the modes it
   meets grow until they sing, as a rubbed singing bowl or a bowed cymbal does.
 - **The touch** (L1 + R1, or B in LATCH): a finger damps the fundamental; the next mode rings and the bow
@@ -177,8 +177,8 @@ strings, and **LATCH**, where the rings rest and you play:
 - A pluck starts at once; a bow swells in over the string's **ATTACK** (0.05 to 10 s, 1.8 s at first): **Y /
   X** make the selected string's ATTACK shorter / longer. **A** lets every string go.
 - Hold **B**, or **L1 and R1** together (either first), and the selected droning string sounds its next
-  harmonic up (a wind voice overblows); let go and it comes back. L1 on a droning string lets it go only
-  when released, so R1 can join it for a harmonic instead.
+  harmonic up (a wind voice overblows); let go and it comes back. **L2** drops the mallet on it instead
+  of plucking.
 - Each column shows a board with a shed-roof top that fills while its string drones and drains as it fades,
   with the word PLUCKED, BOWED or FADING.
 
@@ -269,7 +269,7 @@ The strings are not re-plucked on a change. They keep ringing and slide to the n
 - **PLAY:** the five strings, each with its pluck ring and bow ring drawn as polygons. The steps are the
   corners, and the pulses are joined into an inner shape that lights on each pluck and fills as the bow swells.
   The band at the top shows the scale, the current chord and the bars until the next change.
-- **The quiet view** (tap L2 on PLAY): only the five strings and their rings, for meditation.
+- **The quiet view** (START + L2 on PLAY): only the five strings and their rings, for meditation.
 - **SOUND:** tone and sound shaping. The engine, exciter and material at the top, then each string's note,
   harmonic touch, bow, decay, brightness, fold,
   stiffness, pick position and buzz, then coupling, body, tone and the sympathetic strings.
@@ -365,8 +365,8 @@ on the shoulder buttons.
 | B | fewer pulses, wrapping back to all |
 | X | rotate the pattern |
 | Y | a new simple pattern |
-| L1 (tap) | strike the selected string like a hammered dulcimer: a bright hammer hit with a light bounce (WIND: a hard attack that overblows for a moment and settles). A tap is shorter than about a tenth of a second |
-| L1 (hold briefly) | pluck the selected string by hand (WIND: tongue a note); it sounds once the hold is clear, about 0.1 s in |
+| L1 | pluck the selected string by hand, the moment it is pressed (WIND: tongue a note) |
+| L2 | drop a dulcimer mallet on it: a bright hit, then rebounds, each lower and sooner, until it rests (WIND: a flutter tongue; STRUCK: a hard mallet, bouncing). Held, L2 still shapes the ring |
 | R1 (hold) | bow the selected string by hand: the bow is drawn slowly, swelling over about two seconds and brightening as it bites, then sings steadily while R1 is held (WIND: blow) |
 | L1 + R1, either first | bow with a harmonic touch: the next harmonic up sings (WIND: overblow, an octave up, a twelfth for REED); bowing with R1, add L1 for overblows as you bow |
 | L2 + up / down | more / fewer steps |
@@ -374,7 +374,7 @@ on the shoulder buttons.
 | L2 + X | more pulses |
 | L2 + Y | rotate back |
 | L2 + A | mute / unmute the string (it fades out and in; a red bar marks it) |
-| tap L2 | the quiet view |
+| START + L2 | the quiet view |
 | R2 + left / right | previous / next scale |
 | R2 + up / down | tone (cutoff) |
 | R2 + X / Y | the selected ring's chance more / less (10% steps) |

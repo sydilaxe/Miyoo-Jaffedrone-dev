@@ -3,6 +3,13 @@ Jaffedrone test build for the Miyoo Mini Plus (OnionOS).
 **Install:** unzip `Jaffedrone-miyoo.zip` at the root of the SD card (it contains `App/Jaffedrone/`),
 then open **Apps → Jaffedrone**.
 
+**New in 0.11.4**
+- The shoulders play the moment they are pressed: **L1** plucks, **R1** bows, **L1 + R1** a harmonic,
+  and **L2** drops a dulcimer mallet on the string: a bright hit, then the mallet bounces, each rebound
+  lower and sooner, until it rests. On a wind voice **L2** is a flutter tongue; on a struck voice a hard
+  mallet, bouncing. Held, L2 still shapes the ring with the d-pad; the quiet view moves to **START + L2**.
+- Delay and reverb start off, like binaural: raise MIX and SEND on the MIX page.
+
 **New in 0.11.3**
 - No more crackles that never stop: the sound is now made a buffer ahead by its own thread. The Miyoo's
   driver asks for two buffers at once, which left the sound only half the time it seemed to have; once a
