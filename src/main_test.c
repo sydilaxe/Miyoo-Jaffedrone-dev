@@ -8,6 +8,7 @@
 #include <string.h>
 #include <time.h>
 
+#include "ahead.h"
 #include "engine.h"
 #include "gfx.h"
 #include "log.h"
@@ -69,6 +70,57 @@ static void next_page(void)
     ui_button(BTN_START, 1);
     press(BTN_R1);
     ui_button(BTN_START, 0);
+}
+
+
+/* rendering ahead (ahead.c), as on the Miyoo: an engine slowed to a given
+ * share of real time, and the driver's habit of asking for two buffers back
+ * to back, then waiting two buffers' time */
+static double slow_share;
+static double mono_s(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec + ts.tv_nsec * 1e-9;
+}
+static void slow_render(int16_t *out, int frames)
+{
+    double t0 = mono_s();
+    engine_render(out, frames);
+    while (mono_s() - t0 < slow_share * frames / RATE)
+        ;
+}
+static void sleep_until(double t)
+{
+    double d = t - mono_s();
+    if (d > 0) {
+        struct timespec ts = {(time_t)d, (long)((d - (time_t)d) * 1e9)};
+        nanosleep(&ts, NULL);
+    }
+}
+/* seconds of paired requests; returns how many second buffers of a pair
+ * came later than one buffer after the pair began (the device ran dry) */
+static int paired_requests(int use_ahead, double secs, int16_t *dst)
+{
+    const int B = 1024;
+    const double per = (double)B / RATE;
+    static int16_t buf[1024 * 2];
+    int late = 0, n = (int)(secs / (2 * per));
+    double start = mono_s() + 0.05;
+    for (int k = 0; k < n; k++) {
+        double t = start + k * 2 * per;
+        sleep_until(t);
+        for (int j = 0; j < 2; j++) {
+            if (use_ahead)
+                ahead_read(buf, B);
+            else
+                slow_render(buf, B);
+            if (dst)
+                memcpy(dst + (size_t)(2 * k + j) * B * 2, buf, sizeof buf);
+        }
+        late += mono_s() > t + per;
+    }
+    return late;
 }
 
 static double rms_of(const int16_t *pcm, int from, int n)
@@ -1635,6 +1687,54 @@ int main(int argc, char **argv)
         engine_set_playing(0);
         engine_render(pcm, RATE);
         printf("release %3d: rms playing %.0f, 0.9 s after stop %.0f\n", rel, on, rms_of(pcm, RATE * 9 / 10, RATE / 10));
+    }
+
+    /* rendering ahead: at 60% of real time (heavier than any patch measured
+     * on the Miyoo), made in the driver's paired requests the second buffer
+     * of each pair comes late; made ahead it comes in time. And the sound is
+     * the same, sample for sample, as made directly in the same pieces. */
+    {
+        slow_share = 0.6;
+        song_default();
+        engine_init(RATE);
+        engine_set_playing(1);
+        int late_direct = paired_requests(0, 1.0, NULL);
+        song_default();
+        engine_init(RATE);
+        engine_set_playing(1);
+        ahead_start(slow_render, RATE, 256, 1024, 0);
+        int late_ahead = paired_requests(1, 1.0, NULL);
+        ahead_stop();
+        slow_share = 0;
+        static int16_t direct[RATE * 2 * 2], via[RATE * 2 * 2];
+        const int frames = RATE * 2;
+        song_default();
+        engine_init(RATE);
+        engine_set_playing(1);
+        ahead_start(slow_render, RATE, 256, 1024, 0);
+        for (int i = 0; i < frames; i += 1024) {
+            while (ahead_ready() < 1024) /* no deadline here: this compares the sound only */
+                sleep_until(mono_s() + 0.001);
+            ahead_read(via + 2 * i, 1024);
+        }
+        AheadStats as;
+        ahead_take_stats(&as);
+        ahead_stop();
+        song_default();
+        engine_init(RATE);
+        engine_set_playing(1);
+        for (int i = 0; i < frames; i += 256)
+            engine_render(direct + 2 * i, 256);
+        int same = as.short_frames == 0 && memcmp(direct, via, (size_t)frames * 4) == 0;
+        if (!same && getenv("RA_DEBUG")) {
+            int d = 0;
+            while (d < frames * 2 && direct[d] == via[d])
+                d++;
+            printf("render ahead debug: short %u frames in %u calls, first difference at frame %d\n", as.short_frames,
+                   as.short_calls, d / 2);
+        }
+        printf("render ahead: at 60%% load, late pairs made in the request %d of 23, made ahead %d (want under 2); "
+               "same sound %d\n", late_direct, late_ahead, same);
     }
 
     /* DSP benchmark: 30 s of the default drone */

@@ -401,6 +401,18 @@ Songs from earlier versions load as they sounded:
 - COUPLE, BODY, CHANGES, EVOLVE, RELATE, binaural and the sympathetic strings are off, and every pulse plays.
 - The old master gate is gone, so songs that used it play ungated.
 
+## Audio
+
+The sound is made a buffer ahead by a thread of its own; the audio device only copies it out. The Miyoo's
+driver asks for two buffers back to back and then waits, so a sound made inside its request had only half
+a buffer's time for each, and past that it crackled for good. Made ahead it has nearly all of it, for one
+buffer (21 ms) more delay. The buttons are read every few milliseconds, apart from drawing the screen, so a
+press reaches the sound at once. Settings in `launch.sh`, before `./jaffedrone`:
+
+- `JD_BUFFER=512`: smaller buffers, less delay from a press to the sound (1024 by default).
+- `JD_AHEAD=0`: make the sound in the driver's request, as before 0.11.3 (to compare).
+- `JD_RATE=44100`: a lower sample rate, about 8% less work.
+
 ## Log
 
 Jaffedrone keeps a log for tuning the engine, following how it is played, and spotting audio problems:
@@ -431,6 +443,9 @@ SELECT** cycles it OFF, BASIC and DETAIL; LOG shows in the header while it runs,
 - **Hints:** plain suggestions when something looks wrong: a high load or late callbacks (raise `JD_BUFFER`,
   or use fewer sympathetic strings), clipping (lower MASTER), a leveller lifting at full (raise LEVEL or
   BREATH), or a voice off its note (try another REG, BREATH or EMBOUCH).
+- **System report:** the launcher also writes `sysinfo.txt` beside the log: Onion's version and settings,
+  the processor, what is running and the audio driver's state at start, then a sample every 10 s while
+  Jaffedrone plays (up to an hour).
 - **Summary** at exit: presses per button, time on each page, the five most adjusted parameters, and how
   much was played by hand.
 

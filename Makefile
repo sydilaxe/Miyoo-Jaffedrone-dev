@@ -37,13 +37,13 @@ $(SDL_LIB):
 	mkdir -p $(dir $@)
 	curl -sSL -o $@ $(SDL_URL) || wget -qO $@ $(SDL_URL) || (rm -f $@; false)
 
-$(APP)/jaffedrone: $(SRC) src/main_sdl.c $(HDR) $(SDL_LIB)
+$(APP)/jaffedrone: $(SRC) src/ahead.c src/main_sdl.c $(HDR) $(SDL_LIB)
 	$(ZIG) cc -target $(TARGET) -mcpu=cortex_a7 $(CFLAGS) -I$(SDL_INC) -o $@ \
-		$(SRC) src/main_sdl.c $(SDL_LIB) -lm -lpthread -Wl,--allow-shlib-undefined -s
+		$(SRC) src/ahead.c src/main_sdl.c $(SDL_LIB) -lm -lpthread -Wl,--allow-shlib-undefined -s
 
-build/jd_test: $(SRC) src/main_test.c $(HDR)
+build/jd_test: $(SRC) src/ahead.c src/main_test.c $(HDR)
 	@mkdir -p build
-	cc $(CFLAGS) -o $@ $(SRC) src/main_test.c -lm
+	cc $(CFLAGS) -o $@ $(SRC) src/ahead.c src/main_test.c -lm -lpthread
 
 build/jd_bench: $(SRC) src/main_bench.c $(HDR)
 	@mkdir -p build
@@ -83,9 +83,9 @@ build/jd_synctest: $(SRC) src/main_synctest.c $(HDR)
 # the OnionOS toolchain's gcc instead of zig, e.g. in the aemiii91/miyoomini-toolchain container:
 #   make package CROSS=/opt/miyoomini-toolchain/usr/bin/arm-linux-gnueabihf-
 CROSS ?= arm-linux-gnueabihf-
-miyoo: $(SRC) src/main_sdl.c $(HDR) $(SDL_LIB)
+miyoo: $(SRC) src/ahead.c src/main_sdl.c $(HDR) $(SDL_LIB)
 	$(CROSS)gcc -marm -mcpu=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard $(CFLAGS) -I$(SDL_INC) -o $(APP)/jaffedrone \
-		$(SRC) src/main_sdl.c $(SDL_LIB) -lm -lpthread -Wl,--allow-shlib-undefined -s
+		$(SRC) src/ahead.c src/main_sdl.c $(SDL_LIB) -lm -lpthread -Wl,--allow-shlib-undefined -s
 
 package: miyoo $(APP)/splash.jdi docs/Jaffedrone-Manual.pdf
 	rm -rf build/sd build/Jaffedrone-miyoo.zip

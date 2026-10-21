@@ -49,6 +49,8 @@ jobs:
         run: |
           r=build/test/results.txt
           grep -q "struck skipping: .*(want over 80: 1)" $r
+          grep -q "render ahead: .* made ahead [01] (want under 2); same sound 1" $r
+          awk '/^render ahead:/ { exit !($12 + 0 >= 20) }' $r
           test "$(grep -c '^dsp WORST .*sounding 1' $r)" -eq 3
           grep -q "0 full-scale samples (want 0)" $r
           # every wind exciter in tune in every material
