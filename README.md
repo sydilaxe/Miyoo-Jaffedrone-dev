@@ -88,6 +88,37 @@ strings, as flutes do. Each voice is checked by the test harness: every exciter 
 tune within a few cents over three octaves. The lip voice listens to itself and lips its pitch onto the note,
 as a player does.
 
+## Struck voices
+
+The VOICE row also offers nine **struck** voices: each a physical model of a vibrating body, its resonant
+modes struck by a mallet or bowed. **R2 + Y / X** on VOICE jumps between the families (strings, winds,
+struck); Y / X alone step one at a time.
+
+- **The mallet** is a mass on a spring that meets the surface where it strikes, pushes while compressed and
+  leaves on its own: a hard mallet makes a short, bright contact, a soft one a long, dark push, and it can
+  bounce back for a second touch. A tap of L1 is a hard mallet, hit harder.
+- **The bow** is stick-slip friction at a point: the surface catches on the bow and slips, and the modes it
+  meets grow until they sing, as a rubbed singing bowl or a bowed cymbal does.
+- **The touch** (L1 + R1, or B in LATCH): a finger damps the fundamental; the next mode rings and the bow
+  sings it.
+
+| Voice | | Modes, over the fundamental |
+|---|---|---|
+| GENDER | gamelan metallophone bars | rectangular-bar modes 1, 2.76, 5.40, 8.93 and the harmonic partials makers shape in (Sethares); paired, beating (ombak) |
+| BONANG | gamelan kettle gongs | 1, 1.52, 3.46, 3.92 (as commonly cited); paired |
+| GONG | a large gong | low partials, pairs beating near 3 Hz as measured on a Balinese gong ageng |
+| BOWL | a singing bowl | 1, 2.9, 5.7, 9.1 (Inácio, Henrique and Antunes), split pairs beating slowly |
+| HANDPAN | a handpan note | 1 : 2 : 3, fundamental, octave and compound fifth, as tuned |
+| STEELPAN | a steel pan note | 1, 2, 3, 4, 5, brighter |
+| TONGUE | a steel tongue drum | a bar clamped at one end: 1, 6.27, 17.5, so nearly pure |
+| CYMBAL | a cymbal | a thin plate's dense series, about n^1.5, as measured |
+| DRUM | a drum | an ideal membrane: 1, 1.59, 2.14, 2.30, 2.65, 2.92, 3.16, 3.50 |
+
+A struck voice's controls: **RING** (how long it rings), **MALLET** (soft felt to hard), **STRETCH** (pulls the
+modes apart: more clangor), **SPOT** (where it is struck and bowed: which modes speak), **SIZZLE** (a rattle
+that follows the ring), **SING** (the mode the bow favours) and **BOW** (bow pressure). The pluck ring
+strikes and the bow ring bows; LATCH, RELEASE and ATTACK work as for strings.
+
 ## Undertones
 
 SUB (MIX page) gives every voice, string or wind, undertones that ring beneath it. Every n-th cycle of the
@@ -436,5 +467,5 @@ Every push runs the **build** workflow:
   `test-output`.
 
 To publish a release with the zip attached, go to **Actions → build → Run workflow** and fill in a tag such as
-`v0.9.0`. Pushing a `v*` tag, or creating a release on the website, does the same. The release text comes from
+`v0.10.0`. Pushing a `v*` tag, or creating a release on the website, does the same. The release text comes from
 `.github/release-notes.md`.

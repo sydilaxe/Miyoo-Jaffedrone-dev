@@ -3,6 +3,11 @@ Jaffedrone test build for the Miyoo Mini Plus (OnionOS).
 **Install:** unzip `Jaffedrone-miyoo.zip` at the root of the SD card (it contains `App/Jaffedrone/`),
 then open **Apps → Jaffedrone**.
 
+**New in 0.10**
+- Struck voices: nine physically modelled bodies for any voice: GENDER, BONANG and GONG (gamelan, with
+  ombak), BOWL, HANDPAN, STEELPAN, TONGUE, CYMBAL and DRUM. Struck by a mallet that bounces, or bowed by
+  stick-slip friction until they sing. R2 + Y / X on VOICE jumps between strings, winds and struck voices.
+
 **New in 0.9.1**
 - Overblows and harmonics with both shoulders in either order: bowing with R1, add L1 (also in LATCH,
   where B held does the same).

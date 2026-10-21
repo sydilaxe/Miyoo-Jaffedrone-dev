@@ -462,12 +462,14 @@ def build(out):
                       (num(3), B("A"), "on a string's control: mute or unmute that string"),
                       (num(4), B("B"), "pluck the string (to hear a change)")], widths=(9 * mm, 20 * mm, None)),
                Paragraph("SOUND", H2),
-               Paragraph("The <b>VOICE</b> row makes each column a <b>STRING</b> or one of seven winds: LIP "
-                         "(brass, conch), REED (clarinet), DOUBLE (oboe, shehnai), FLUTE, FREE (harmonium), "
-                         "RECORDER or BANSURI. The rows below follow the voice: a string has BOW, DECAY, "
-                         "BRIGHT, FOLD, STIFF, POS and BUZZ; a wind has BREATH, AIR, EMBOUCH, VIBRATO and "
-                         "GROWL. The shared row holds COUPLE, BODY, its TYPE, the winds' BORE and CUTOFF; the "
-                         "last row the sympathetic strings.", P))]
+               Paragraph("The <b>VOICE</b> row makes each column a <b>STRING</b>, one of seven winds (LIP, "
+                         "REED, DOUBLE, FLUTE, FREE, RECORDER, BANSURI) or one of nine struck voices (see "
+                         "Struck voices). " + B("R2") + " + " + B("Y") + " / " + B("X") + " on VOICE jumps to "
+                         "the previous / next family; " + B("Y") + " / " + B("X") + " alone step one at a time. "
+                         "The rows below follow the voice: a string has BOW, DECAY, BRIGHT, FOLD, STIFF, POS and "
+                         "BUZZ; a wind BREATH, AIR, EMBOUCH, VIBRATO and GROWL; a struck voice BOW, RING, MALLET, "
+                         "STRETCH, SPOT, SIZZLE and SING. The shared row holds COUPLE, BODY, its TYPE, the winds' "
+                         "BORE and CUTOFF; the last row the sympathetic strings.", P))]
     s += [Spacer(1, 4),
           Table([[ImageFlow("compose", 230), ImageFlow("mix", 230)],
                  [Paragraph("<b>COMPOSE</b>: the scale and root (a wheel of the scale's notes, the chord "
@@ -477,6 +479,41 @@ def build(out):
                             "undertones (SUB), then delay, reverb and binaural.", SMALL)]],
                 colWidths=(250, 250))]
     s += [PageBreak()]
+
+    # -------------------------------------------------- struck voices
+    s += [Paragraph("Struck voices", H1),
+          Paragraph("A struck voice is a physical model of a vibrating body: its resonant modes, struck by a "
+                    "mallet (a mass on a spring that meets the surface and bounces off, so a hard mallet makes "
+                    "a short bright contact and a soft one a long dark push) or bowed (stick-slip friction, "
+                    "so the modes it meets grow until they sing, as on a rubbed bowl or a bowed cymbal). "
+                    "Every voice can be struck and bowed.", P),
+          side(Miyoo("wind_play", {"L1": 1, "R1": 2, "B": 3}),
+               table([(num(1), B("L1"), "strike (a tap: a hard mallet, hit harder)"),
+                      (num(2), B("R1"), "bow: the body catches and sings"),
+                      (num(3), B("L1") + " + " + B("R1") + ", " + B("B"),
+                       "a touch: the fundamental is damped and the next mode rings and sings")],
+                     widths=(9 * mm, 24 * mm, None)),
+               Spacer(1, 4),
+               table([("GENDER", "gamelan metallophone bars, in beating pairs (ombak)"),
+                      ("BONANG", "gamelan kettle gongs, paired"),
+                      ("GONG", "a large gong, low, its pairs beating slowly"),
+                      ("BOWL", "a singing bowl: struck, or rubbed until it sings"),
+                      ("HANDPAN", "fundamental, octave and fifth above, tuned"),
+                      ("STEELPAN", "the same family, brighter"),
+                      ("TONGUE", "a steel tongue drum: pure, a bar held at one end"),
+                      ("CYMBAL", "a dense shimmer of modes; bowed, it screams and sings"),
+                      ("DRUM", "a membrane: a short pitched thud")], widths=(22 * mm, None)),
+               Spacer(1, 4),
+               table([("RING", "how long it rings"), ("MALLET", "soft felt to hard metal"),
+                      ("STRETCH", "pulls the modes apart: more clangor, more metal"),
+                      ("SPOT", "where it is struck and bowed: which modes speak"),
+                      ("SIZZLE", "a rattle that follows the ring"), ("SING", "the mode the bow favours"),
+                      ("BOW", "bow pressure: from a whisper to a scream")], widths=(22 * mm, None))),
+          Paragraph("The mode frequencies follow measurements and theory: rectangular-bar modes and the "
+                    "makers' harmonic partials for the gamelan bars (Sethares), 1 : 2 : 3 for handpan and pan, "
+                    "1, 2.9, 5.7, 9.1 for the bowl (Inacio, Henrique and Antunes), a clamped bar for the "
+                    "tongue drum, a thin plate's dense series for the cymbal, the Bessel-function modes of a "
+                    "membrane for the drum.", SMALL), PageBreak()]
 
     # -------------------------------------------------- SONG
     s += [Paragraph("SONG: presets, chord memory and key", H1),

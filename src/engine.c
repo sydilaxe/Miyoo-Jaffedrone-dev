@@ -228,7 +228,7 @@ static const ParamDef sparams[NSP] = {
     {"PLUCK", 0, 1},    {"P STEPS", 1, 16}, {"P PULSES", 1, 16}, {"P ROTATE", 0, 15},
     {"BOW RING", 0, 1}, {"B STEPS", 1, 16}, {"B PULSES", 1, 16}, {"B ROTATE", 0, 15}, {"RATE", 0, 5},
     {"PAN", -50, 50},   {"P CHANCE", 0, 100}, {"B CHANCE", 0, 100}, {"HARM", 0, 4}, {"GATE", 0, 100},
-    {"VOICE", 0, NEXCITE}, {"RELEASE", 0, 100}, {"ATTACK", 0, 100}};
+    {"VOICE", 0, NEXCITE + NPERC}, {"RELEASE", 0, 100}, {"ATTACK", 0, 100}};
 static const ParamDef gparams[NGP] = {{"VOICING", 0, 1},   {"SCALE", 0, NSCALE - 1}, {"ROOT", 24, 72},
                                       {"CHANGES", 0, 5},   {"BPM", 40, 200},         {"DRIFT", 0, 100},
                                       {"GLIDE", 0, 7},     {"CUTOFF", 0, 100},       {"MASTER", 0, 100},
@@ -301,17 +301,42 @@ static const int def_fx[NFX] = {5, 45, 25, 35, 60, 55, 0, 100, 0, 30, 35, BODY_W
 
 const ParamDef *sparam_def(int p) { return &sparams[p]; }
 /* in WIND the string controls take on their wind meanings */
-int engine_voice_wind(int s) { return song.sp[s][SP_VOICE] > 0; }
+/* what an SP_VOICE value is: 0 a string, 1 a wind, 2 struck */
+static int vkind(int v) { return v == 0 ? 0 : v <= NEXCITE ? 1 : 2; }
+int engine_voice_wind(int s) { return vkind(song.sp[s][SP_VOICE]) == 1; }
+int engine_voice_perc(int s) { return vkind(song.sp[s][SP_VOICE]) == 2; }
 int engine_wind_count(const Song *g)
 {
     int n = 0;
     for (int s = 0; s < NS; s++)
-        n += g->sp[s][SP_VOICE] > 0;
+        n += vkind(g->sp[s][SP_VOICE]) == 1;
     return n;
 }
-const char *engine_voice_name(int v) { return v > 0 ? excite_names[v - 1] : "STRING"; }
+int engine_perc_count(const Song *g)
+{
+    int n = 0;
+    for (int s = 0; s < NS; s++)
+        n += vkind(g->sp[s][SP_VOICE]) == 2;
+    return n;
+}
+static const char *const perc_names[NPERC] = {"GENDER", "BONANG", "GONG", "BOWL", "HANDPAN",
+                                              "STEELPAN", "TONGUE", "CYMBAL", "DRUM"};
+const char *engine_voice_name(int v)
+{
+    return v == 0 ? "STRING" : v <= NEXCITE ? excite_names[v - 1] : perc_names[v - 1 - NEXCITE];
+}
 const char *sparam_name(int s, int p)
 {
+    if (engine_voice_perc(s))
+        switch (p) {
+        case SP_DECAY: return "RING";
+        case SP_BRIGHT: return "MALLET";
+        case SP_STIFF: return "STRETCH";
+        case SP_POS: return "SPOT";
+        case SP_BUZZ: return "SIZZLE";
+        case SP_HARM: return "SING";
+        case SP_PON: return "STRIKE";
+        }
     if (engine_voice_wind(s))
         switch (p) {
         case SP_BOW: return "BREATH";
@@ -389,7 +414,7 @@ void sparam_format(int s, int p, char *b, int n)
     case SP_HARM: {
         static const char *const hn[5] = {"OFF", "2ND", "3RD", "4TH", "5TH"};
         static const char *const rn[5] = {"1ST", "2ND", "3RD", "4TH", "5TH"};
-        snprintf(b, n, "%s", engine_voice_wind(s) ? rn[x] : hn[x]);
+        snprintf(b, n, "%s", engine_voice_wind(s) || engine_voice_perc(s) ? rn[x] : hn[x]);
         return;
     }
     case SP_PCHANCE:
@@ -542,6 +567,7 @@ static inline float softclip(float x)
 }
 
 #define DL_MAX 8192
+#define PMAX 24 /* struck: most modes, twins included */
 typedef struct {
     float buf[DL_MAX];
     int w;
@@ -557,6 +583,13 @@ typedef struct {
     int bounce_n;            /* samples until the hammer bounces back onto the string */
     float bounce_amp;
     int over_kick;           /* WIND: samples left of a hard attack's overblow */
+    /* STRUCK: the modes (velocity + i w displacement, which simply rotates)
+     * and the mallet: its height over the surface, its speed, how hard */
+    float mz[PMAX][2];
+    float hm_y, hm_v, hm_hard;
+    int hm_on;
+    float bow_lpn;           /* rosin: the bow's slow noise */
+    float bow_ud;            /* the surface's speed under the bow, last sample */
     float ap[2][2]; /* STIFF: two dispersive allpasses in the loop */
     float fold_x1;  /* FOLD: last input, for the anti-aliased folder */
     /* WIND: the jet delay, a DC blocker, the lip resonator, breath and tongue */
@@ -664,9 +697,14 @@ static float midi_hz(float m) { return 440.f * exp2f((m - 69.f) / 12.f); }
 /* a pluck is a short burst of noise into the loop, about one period long
  * (at most 6 ms), shaped by a raised cosine so it has no hard edges */
 #define CHIFF_MS 0.03f
+static void perc_strike(String *s, float amp, float hard);
 static void string_pluck(String *s, float amp)
 {
-    if (s->voice_was > 0) { /* the voice sounding now */
+    if (vkind(s->voice_was) == 2) { /* struck: the mallet falls */
+        perc_strike(s, amp, 1.f);
+        return;
+    }
+    if (vkind(s->voice_was) == 1) { /* the voice sounding now */
         /* a tongued note: a push of breath that falls back, with a chiff */
         s->art_t = 0.f;
         s->art_amp = amp;
@@ -688,7 +726,11 @@ static void string_pluck(String *s, float amp)
  * hard the note jumps to its overblown register for a moment and settles */
 static void string_hammer(String *s, float amp)
 {
-    if (s->voice_was > 0) {
+    if (vkind(s->voice_was) == 2) { /* struck: a hard mallet, hit harder */
+        perc_strike(s, fminf(1.f, amp * 1.3f), 3.f);
+        return;
+    }
+    if (vkind(s->voice_was) == 1) {
         s->art_t = 0.f;
         s->art_amp = fminf(1.f, amp * 1.4f);
         s->chiff = amp;
@@ -1663,6 +1705,161 @@ static void wind_tick(String *st, const WindVoice *v, float inj, float *py, floa
 
 /* the wind voice's settings for this sub-block (pitch dependent) and its
  * bore length */
+/* ------------------------------------------------------------ struck
+ * A struck voice is a body of resonant modes (modal physical modelling).
+ * Each mode is a damped oscillator kept as z = v + i w x (velocity plus
+ * i omega displacement), which simply rotates and shrinks each sample.
+ * The mallet is a mass on a spring: it meets the surface where it strikes,
+ * pushes while the spring is compressed and leaves on its own, so a hard
+ * mallet makes a short bright contact, a soft one a long dark push, and it
+ * may bounce back for a second touch. The bow is stick-slip friction at a
+ * point: the surface catches on the bow and slips, so the modes it meets
+ * grow until they sing (a rubbed bowl, a bowed cymbal).
+ * The mode frequencies follow measurements and theory:
+ *   GENDER   gamelan bars: rectangular-bar modes 1, 2.76, 5.40, 8.93, with the
+ *            harmonic partials makers shape in (Sethares); paired (ombak)
+ *   BONANG   kettle gongs: 1, 1.52, 3.46, 3.92 (as commonly cited); paired
+ *   GONG     a large gong, low and slow, its pairs beating near 3 Hz (as
+ *            measured on a Balinese gong ageng)
+ *   BOWL     a singing bowl: 1, 2.9, 5.7, 9.1 (Inacio, Henrique and Antunes),
+ *            each mode a split pair that beats slowly
+ *   HANDPAN  fundamental, octave and compound fifth, 1 : 2 : 3, tuned
+ *   STEELPAN the same family, brighter, with a 4th and 5th
+ *   TONGUE   a steel tongue: a bar clamped at one end, 1, 6.27, 17.5
+ *   CYMBAL   a thin plate's dense series, about n^1.5 (from measured cymbals)
+ *   DRUM     a membrane: 1, 1.59, 2.14, 2.30, 2.65, 2.92, 3.16, 3.50 */
+typedef struct {
+    int n;
+    float r[16], g[16]; /* frequency over the fundamental; how strongly struck and heard */
+    float t60;          /* the fundamental's ring at RING 50, seconds */
+    float hf;           /* how much faster the higher modes die */
+    float split;        /* Hz between a mode and its twin (beating); 0 none */
+    int pairs;          /* how many of the lowest modes have a twin */
+} PercModel;
+static PercModel perc_models[NPERC] = {
+    {6, {1, 2.0f, 2.756f, 3.0f, 5.404f, 8.933f}, {1, .25f, .55f, .18f, .3f, .15f}, 2.5f, 1.0f, 6.f, 3},
+    {6, {1, 1.52f, 2.0f, 3.46f, 3.92f, 5.2f}, {1, .45f, .3f, .35f, .25f, .12f}, 1.8f, 1.2f, 4.f, 2},
+    {7, {1, 1.47f, 2.0f, 2.5f, 3.0f, 3.6f, 4.6f}, {1, .35f, .45f, .25f, .3f, .15f, .1f}, 8.f, 0.6f, 3.f, 3},
+    {5, {1, 2.9f, 5.7f, 9.1f, 13.0f}, {1, .5f, .3f, .18f, .1f}, 12.f, 0.5f, 0.8f, 3},
+    {5, {1, 2.f, 3.f, 4.9f, 6.3f}, {1, .6f, .4f, .08f, .05f}, 3.5f, 1.4f, 0.5f, 1},
+    {5, {1, 2.f, 3.f, 4.f, 5.f}, {1, .75f, .45f, .25f, .12f}, 1.6f, 1.5f, 0.f, 0},
+    {3, {1, 6.267f, 17.547f}, {1, .18f, .06f}, 3.f, 1.2f, 0.f, 0},
+    {12, {0}, {0}, 6.f, 0.4f, 1.5f, 4}, /* CYMBAL: filled in at start */
+    {8, {1, 1.59f, 2.14f, 2.30f, 2.65f, 2.92f, 3.16f, 3.50f}, {1, .8f, .6f, .5f, .4f, .35f, .3f, .25f}, 0.6f, 1.6f, 0.f,
+     0},
+};
+
+typedef struct {
+    int n;
+    float ar[PMAX], ai[PMAX]; /* each mode's rotation and decay per sample */
+    float w[PMAX];            /* radians per sample, for the displacement */
+    float phi[PMAX];          /* how the mode moves where it is struck or bowed */
+    float bow_w[PMAX];        /* ... how much of it the bow catches */
+    float out[PMAX];          /* how loud it is heard */
+    float K;                  /* the mallet's spring */
+    float sizzle, bow_p, bow_v;
+} PercVoice;
+
+static void perc_init_models(void)
+{
+    PercModel *c = &perc_models[PC_CYMBAL];
+    for (int k = 0; k < c->n; k++) {
+        c->r[k] = powf((k + 3) / 3.f, 1.5f);
+        c->g[k] = 0.9f * powf(0.84f, (float)k) + 0.08f;
+    }
+}
+
+static void perc_strike(String *s, float amp, float hard)
+{
+    s->hm_on = 1;
+    s->hm_y = 0.f; /* touching the surface, moving in */
+    s->hm_v = amp;
+    s->hm_hard = hard;
+}
+
+/* the voice's modes for this sub-block, from its model and controls */
+static void perc_setup(PercVoice *v, String *st, const int *P, float hz, float bow_amt)
+{
+    const PercModel *m = &perc_models[st->voice_was - 1 - NEXCITE];
+    float stretch = 1.f + 0.35f * P[SP_STIFF] / 100.f; /* more: the partials pulled apart, more clangor */
+    float ring = m->t60 * powf(6.f, (P[SP_DECAY] - 50) / 50.f);
+    float pos = P[SP_POS] / 100.f, bright = P[SP_BRIGHT] / 100.f;
+    int sing = P[SP_HARM] + (st->over ? 1 : 0); /* the mode the bow favours; a touch moves it up */
+    int n = 0;
+    for (int k = 0; k < m->n + m->pairs && n < PMAX; k++) {
+        int i = k < m->n ? k : k - m->n; /* the twins follow the modes */
+        /* a pair straddles its note, half the split below and half above, so
+         * it beats around the pitch rather than pulling it sharp */
+        float r = powf(m->r[i], stretch), half = i < m->pairs ? 0.5f * m->split : 0.f;
+        float f = hz * r + (k < m->n ? -half : half);
+        if (f > 0.42f * sr)
+            continue;
+        float t60 = ring * powf(r, -0.7f * m->hf);
+        if (st->over && i == 0) /* a finger on the fundamental's antinode: it dies, the next mode rings */
+            t60 = fminf(t60, 0.05f);
+        float rad = powf(10.f, -3.f / (t60 * sr));
+        float w = 6.2831853f * f / sr;
+        v->ar[n] = rad * cosf(w), v->ai[n] = rad * sinf(w), v->w[n] = w;
+        v->phi[n] = 0.2f + 0.8f * fabsf(cosf(3.14159265f * i * pos * 0.9f)); /* where it is struck */
+        v->bow_w[n] = v->phi[n] * (i == sing ? 1.f : 0.3f);
+        v->out[n] = m->g[i] * (k < m->n ? 1.f : 0.85f) / sqrtf(r);
+        n++;
+    }
+    v->n = n;
+    /* MALLET: the contact lasts 4 ms (felt) down to 0.3 ms (hard), a spring for a mass of 1 */
+    float tau = 0.004f * powf(0.07f, bright);
+    v->K = 9.8696f / (tau * tau);
+    v->sizzle = P[SP_BUZZ] / 100.f;
+    v->bow_p = bow_amt;
+    v->bow_v = 0.25f;
+}
+
+/* one sample of a struck voice: y is its motion where it is struck (for
+ * the bridge), o the sound */
+static void perc_tick(String *st, const PercVoice *v, float inj, float *py, float *po)
+{
+    const float T = 1.f / sr;
+    float F = 0.f, Fb = 0.f;
+    if (st->hm_on) { /* the mallet against the surface */
+        float u = 0.f;
+        for (int k = 0; k < v->n; k++)
+            u += v->phi[k] * st->mz[k][1] / v->w[k] * T; /* displacement: Im(z) / omega (per sample units) */
+        float d = st->hm_y - u;
+        if (d > 0.f)
+            F = v->K * st->hm_hard * d * (1.f + d * 4000.f); /* the felt stiffens as it is pressed */
+        st->hm_v -= F * T;
+        st->hm_y += st->hm_v * T;
+        if (d < 0.f && st->hm_v < 0.f) /* it has left the surface */
+            st->hm_on = 0;
+    }
+    if (v->bow_p > 1e-3f) { /* the bow: stick and slip, against the surface's speed under it (last sample) */
+        float ud = st->bow_ud;
+        st->bow_lpn += (fnoise() - st->bow_lpn) * 0.02f;
+        float dv = v->bow_v * (1.f + 0.05f * st->bow_lpn) - ud;
+        float slope = 5.f - 3.5f * fminf(1.f, v->bow_p);
+        float q = fabsf(dv * slope) + 0.75f;
+        q = q * q;
+        Fb = v->bow_p * 900.f * dv / (q * q); /* the bow table: grips when slow, lets go when fast */
+    }
+    float o = 0.f, y = 0.f, ud = 0.f, fs = F * T + inj * 0.02f, fb = Fb * T;
+    for (int k = 0; k < v->n; k++) { /* each mode turns and shrinks, pushed by mallet and bow */
+        float zr = st->mz[k][0], zi = st->mz[k][1];
+        float nr = v->ar[k] * zr - v->ai[k] * zi + v->phi[k] * fs + v->bow_w[k] * fb;
+        float ni = v->ar[k] * zi + v->ai[k] * zr;
+        st->mz[k][0] = nr, st->mz[k][1] = ni;
+        o += v->out[k] * nr;
+        y += v->phi[k] * ni;
+        ud += v->bow_w[k] * nr;
+    }
+    st->bow_ud = ud;
+    o *= 0.35f;
+    if (v->sizzle > 0.f) /* a rattle that follows how loud it rings */
+        o *= 1.f + v->sizzle * 1.5f * fnoise() * fminf(1.f, fabsf(o) * 3.f);
+    st->env = fmaxf(fabsf(o), st->env * 0.9997f);
+    *py = y * 0.05f;
+    *po = o;
+}
+
 /* LATCH: how fast the latch opens (a pluck at once, a bow or breath over
  * the string's ATTACK) and closes (its RELEASE, to about -40 dB) */
 static float latch_k(const String *st, const int *P, int wind)
@@ -1946,6 +2143,8 @@ void engine_render(int16_t *out, int frames)
     float sb_a1[NS][2], sb_a2 = sub_r * sub_r, sb_amp[NS][2], sb_k[NS];
     WindVoice wv[NS];
     int wv_on[NS];
+    PercVoice pv[NS];
+    int pv_on[NS];
     /* binaural: the beat in hertz; LOCK puts it on the nearest power-of-two
      * multiple of the beat rate, so it pulses with the rhythm */
     float bin_hz = beat_hz[song.fx[FX_BINBEAT]], bin_mix = song.fx[FX_BINDEPTH] / 100.f;
@@ -2092,8 +2291,23 @@ void engine_render(int16_t *out, int frames)
                 st->ap[0][0] = st->ap[0][1] = st->ap[1][0] = st->ap[1][1] = 0.f;
                 st->burst = 0;
                 st->art_t = -1.f;
+                memset(st->mz, 0, sizeof st->mz);
+                st->hm_on = 0;
             }
-            wv_on[s] = st->voice_was > 0; /* the voice sounding now, until a change has faded */
+            wv_on[s] = vkind(st->voice_was) == 1; /* the voice sounding now, until a change has faded */
+            pv_on[s] = vkind(st->voice_was) == 2;
+            if (pv_on[s]) {
+                const int *P = song.sp[s];
+                float h = latch_mode ? fmaxf(st->hand_env, st->bow_env) : st->hand_env;
+                float bow = P[SP_BOW] / 100.f * fmaxf(st->bow_env, h) * m_bow + 0.4f * h; /* the hand presses harder */
+                st->bow_env += ((float)st->bow_open - st->bow_env) * fminf(1.f, bow_k[s] * nn);
+                st->hand_env += ((float)st->hand - st->hand_env) * fminf(1.f, (st->hand ? hand_k : hand_rel) * nn);
+                perc_setup(&pv[s], st, P, hz, bow);
+                st->f_sound = hz;
+                float l = P[SP_LEVEL] / 100.f;
+                st->lvl = l * l * m_lvl;
+                continue;
+            }
             if (wv_on[s]) {
                 wind_setup(&wv[s], st, song.sp[s], hz, sps16, hand_rel);
                 if (st->over_kick > 0)
@@ -2180,6 +2394,18 @@ void engine_render(int16_t *out, int frames)
                     continue;
 
                 float y, o;
+                if (pv_on[s]) { /* a struck body barely hears the bridge */
+                    perc_tick(st, &pv[s], 0.2f * couple * (bridge - st->last_y), &y, &o);
+                    if (fold_g[s] > 0.f) {
+                        float g = 1.f + fold_g[s] * 5.f, xf = o * g, dx = xf - st->fold_x1, f;
+                        f = fabsf(dx) > 1e-4f ? (fold_F(xf) - fold_F(st->fold_x1)) / dx : fold_f(0.5f * (xf + st->fold_x1));
+                        st->fold_x1 = xf;
+                        o = f * (0.8f / sqrtf(g));
+                    }
+                    st->last_y = y * st->gain;
+                    br += st->last_y;
+                    goto voice_out;
+                }
                 if (wv_on[s]) { /* air couples more gently than a bridge */
                     wind_tick(st, &wv[s], 0.3f * couple * (bridge - st->last_y), &y, &o);
                     if (fold_g[s] > 0.f) {
@@ -2546,6 +2772,7 @@ void engine_render(int16_t *out, int frames)
 void engine_init(int sample_rate)
 {
     sr = (float)sample_rate;
+    perc_init_models();
     for (int l = 0; l < FDN; l++) {
         fdn_lenf[l] = fdn_len48[l] * sr / 48000.f;
         fdn_leni[l] = (int)lrintf(fdn_lenf[l]);

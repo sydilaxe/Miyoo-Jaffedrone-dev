@@ -1030,6 +1030,111 @@ int main(int argc, char **argv)
         printf("string harmonic by hand: %.1f Hz -> %.1f Hz (want x2)\n", a0, a1);
     }
 
+    /* STRUCK: the pitched models in tune; a drum dies sooner than a gong; a
+     * bowed bowl and cymbal sing steadily; a hard mallet brighter than a
+     * soft one; a touch (L1 + R1) moves the struck pitch up */
+    {
+        static const int pitched[7] = {PC_GENDER, PC_GONG, PC_BOWL, PC_HANDPAN, PC_STEELPAN, PC_TONGUE, PC_DRUM};
+        int ok = 0;
+        double worst = 0;
+        for (int k = 0; k < 7; k++) {
+            solo(ENG_STRINGS, 0, 0, 0, 0);
+            for (int v = 0; v < NS; v++)
+                song.sp[v][SP_VOICE] = VOICE_PERC(pitched[k]);
+            engine_render(pcm, RATE / 2);
+            engine_pluck(2);
+            engine_render(pcm, RATE / 2);
+            double c = 1200 * log2(hz_yin(pcm, RATE / 10, RATE / 4) / 110.0);
+            ok += fabs(c) < 25;
+            if (fabs(c) > fabs(worst))
+                worst = c;
+        }
+        float ring[2];
+        static const int rp[2] = {PC_DRUM, PC_GONG};
+        for (int k = 0; k < 2; k++) {
+            solo(ENG_STRINGS, 0, 0, 0, 0);
+            for (int v = 0; v < NS; v++)
+                song.sp[v][SP_VOICE] = VOICE_PERC(rp[k]);
+            engine_render(pcm, RATE / 2);
+            engine_pluck(2);
+            engine_render(pcm, RATE * 2 - 2048);
+            engine_render(pcm, 2048); /* the meter holds a render's peak: read the last moments */
+            ring[k] = live.meter[2];
+        }
+        float sing[2][2];
+        static const int bp[2] = {PC_BOWL, PC_CYMBAL};
+        for (int k = 0; k < 2; k++) {
+            solo(ENG_STRINGS, 0, 0, 0, 70);
+            for (int v = 0; v < NS; v++)
+                song.sp[v][SP_VOICE] = VOICE_PERC(bp[k]);
+            engine_render(pcm, RATE * 3);
+            engine_render(pcm, 2048);
+            sing[k][0] = live.meter[2];
+            engine_render(pcm, RATE * 3);
+            engine_render(pcm, 2048);
+            sing[k][1] = live.meter[2];
+        }
+        double hf[2];
+        for (int k = 0; k < 2; k++) {
+            solo(ENG_STRINGS, 0, 0, 0, 0);
+            for (int v = 0; v < NS; v++)
+                song.sp[v][SP_VOICE] = VOICE_PERC(PC_GENDER), song.sp[v][SP_BRIGHT] = k ? 95 : 5;
+            engine_render(pcm, RATE / 2);
+            engine_pluck(2);
+            engine_render(pcm, RATE / 5);
+            double e = 0, h = 0;
+            for (int i = 600; i < RATE / 10; i++) {
+                double d = pcm[2 * i] - 2.0 * pcm[2 * i - 2] + pcm[2 * i - 4];
+                e += (double)pcm[2 * i] * pcm[2 * i];
+                h += d * d;
+            }
+            hf[k] = h / (e + 1);
+        }
+        solo(ENG_STRINGS, 0, 0, 0, 70);
+        for (int v = 0; v < NS; v++)
+            song.sp[v][SP_VOICE] = VOICE_PERC(PC_BOWL);
+        engine_render(pcm, RATE * 3);
+        double t0 = hz_yin(pcm, RATE, RATE / 4);
+        engine_overblow(2, 1);
+        engine_render(pcm, RATE * 3);
+        double t1 = hz_yin(pcm, RATE * 2, RATE / 4);
+        engine_overblow(2, 0);
+        printf("struck: %d/7 pitched models in tune (worst %+.0f cents); ring after 2 s drum %.3f, gong %.3f; bowed bowl %.3f -> %.3f, "
+               "cymbal %.3f -> %.3f; mallet soft %.3g hard %.3g; bowl touched %.0f -> %.0f Hz\n",
+               ok, worst, ring[0], ring[1], sing[0][0], sing[0][1], sing[1][0], sing[1][1], hf[0], hf[1], t0, t1);
+        printf("struck checks: tune %d, drum shorter %d, bowl sings %d, cymbal sings %d, hard brighter %d, touch higher %d\n",
+               ok == 7, ring[0] < 0.3f * ring[1], sing[0][1] > 0.01f && sing[0][1] > 0.6f * sing[0][0],
+               sing[1][1] > 0.01f && sing[1][1] > 0.6f * sing[1][0], hf[1] > hf[0], t1 > 1.5 * t0);
+    }
+
+    /* SOUND: R2 + X on a VOICE jumps a family at a time: string -> the first
+     * wind -> the first struck voice -> string */
+    {
+        song_default();
+        engine_init(RATE);
+        next_page(); /* PLAY -> SOUND */
+        for (int i = 0; i < 12; i++)
+            press(BTN_UP); /* to the top row: VOICE */
+        int seq[3] = {-1, -1, -1}, col = -1;
+        for (int k = 0; k < 3; k++) {
+            int before[NS];
+            for (int v = 0; v < NS; v++)
+                before[v] = song.sp[v][SP_VOICE];
+            ui_button(BTN_R2, 1);
+            press(BTN_X);
+            ui_button(BTN_R2, 0);
+            for (int v = 0; v < NS; v++)
+                if (song.sp[v][SP_VOICE] != before[v])
+                    col = v;
+            seq[k] = col >= 0 ? song.sp[col][SP_VOICE] : -1;
+            ui_tick(50);
+        }
+        for (int i = 0; i < PAGE_COUNT - 1; i++)
+            next_page(); /* back to PLAY */
+        printf("family jump: %s -> %s -> %s\n", seq[0] >= 0 ? engine_voice_name(seq[0]) : "?",
+               seq[1] >= 0 ? engine_voice_name(seq[1]) : "?", seq[2] >= 0 ? engine_voice_name(seq[2]) : "?");
+    }
+
     /* undertones: energy an octave and a twelfth below a 110 Hz voice */
     for (int eng = 0; eng < NENGINE; eng++)
         for (int sub = 0; sub <= 70; sub += 70) {
@@ -1543,10 +1648,26 @@ int main(int argc, char **argv)
         engine_render(pcm, 1024);
     secs_cpu = (double)(clock() - c0) / CLOCKS_PER_SEC;
     printf("dsp WIND (bansuri, undertones): 30 s in %.2f s host cpu (%.1f%%)\n", secs_cpu, secs_cpu / 30.0 * 100.0);
-    /* mixed screens: two strings, then a reed, a flute and a bansuri */
+    song_default(); /* the heaviest struck case: five bowed cymbals */
+    for (int s = 0; s < NS; s++)
+        song.sp[s][SP_VOICE] = VOICE_PERC(PC_CYMBAL), song.sp[s][SP_BOW] = 60;
+    engine_init(RATE);
+    engine_set_playing(1);
+    c0 = clock();
+    for (int i = 0; i < 30 * RATE / 1024; i++)
+        engine_render(pcm, 1024);
+    secs_cpu = (double)(clock() - c0) / CLOCKS_PER_SEC;
+    printf("dsp STRUCK (five bowed cymbals): 30 s in %.2f s host cpu (%.1f%%)\n", secs_cpu, secs_cpu / 30.0 * 100.0);
+    song_default();
+    for (int s = 0; s < NS; s++)
+        song.sp[s][SP_VOICE] = 1 + EX_BANSURI;
+    engine_init(RATE);
+    engine_set_playing(1);
+    /* mixed screens: two strings, a reed, a gamelan gender and a singing bowl */
     song.sp[0][SP_VOICE] = song.sp[1][SP_VOICE] = 0;
     song.sp[2][SP_VOICE] = 1 + EX_REED;
-    song.sp[3][SP_VOICE] = 1 + EX_FLUTE;
+    song.sp[3][SP_VOICE] = VOICE_PERC(PC_GENDER);
+    song.sp[4][SP_VOICE] = VOICE_PERC(PC_BOWL);
     for (int i = 0; i < 300; i++) {
         engine_render(pcm, RATE / 100);
         ui_tick(10);

@@ -8,7 +8,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define JD_VERSION "0.9.1"
+#define JD_VERSION "0.10.0"
 
 #define NS 5
 #define NSP 27 /* params per string */
@@ -68,6 +68,12 @@ enum { SUB_OCT, SUB_TWELFTH, SUB_TWO_OCT, SUB_OCT_TWELFTH, NSUBDIV };
  * are no longer used; they are kept so older songs load. */
 enum { ENG_STRINGS, ENG_WIND, NENGINE };
 enum { EX_LIP, EX_REED, EX_DOUBLE, EX_FLUTE, EX_FREE, EX_RECORDER, EX_BANSURI, NEXCITE };
+/* A struck voice (SP_VOICE > NEXCITE) is a vibrating body of resonant
+ * modes, struck by a mallet (a mass on a spring that meets the surface and
+ * bounces off) or bowed (stick-slip friction). Its STIFF, POS, BUZZ, DECAY,
+ * BRIGHT and HARM become STRETCH, SPOT, SIZZLE, RING, MALLET and SING. */
+enum { PC_GENDER, PC_BONANG, PC_GONG, PC_BOWL, PC_HANDPAN, PC_STEELPAN, PC_TONGUE, PC_CYMBAL, PC_DRUM, NPERC };
+#define VOICE_PERC(p) (1 + NEXCITE + (p)) /* the SP_VOICE of struck model p */
 enum { MAT_WOOD, MAT_METAL, MAT_CERAMIC, MAT_GLASS, NMATERIAL };
 /* GP_CHANCE: the chance a scheduled change happens. GP_RELATE: how many
  * notes the next chord must share with the last (0 .. 2). */
@@ -150,6 +156,8 @@ float engine_voice_pitch(int v); /* from its recent sound (log DETAIL only) */
 const ParamDef *sparam_def(int p);
 const char *sparam_name(int s, int p); /* the name for voice s's engine */
 int engine_voice_wind(int s);          /* 1 if voice s is a wind voice */
+int engine_voice_perc(int s);          /* 1 if voice s is a struck voice */
+int engine_perc_count(const Song *g);  /* how many voices are struck */
 int engine_wind_count(const Song *g);  /* how many voices are winds */
 const char *engine_voice_name(int v);  /* an SP_VOICE value: STRING, LIP .. */
 const ParamDef *gparam_def(int p);
