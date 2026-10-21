@@ -113,9 +113,11 @@ static void status(AudioTiming *t, double secs)
     double peak_load = t && t->buffer_us ? 100.0 * t->us_max / t->buffer_us : 0;
     double rms = s.frames ? sqrt(s.rms_acc / s.frames) : 0, lev = s.frames ? s.lev_acc / s.frames : 0;
     const SyncStatus *ss = sync_status();
-    put("STAT", "load avg %.0f%% peak %.0f%% late %u | peak %.2f rms %.3f clips %u | leveller avg %.1f min %.1f | sync %s",
-        load, peak_load, t ? t->late : 0, s.peak, rms, s.clips, lev, s.lev_min,
-        ss->leading ? "lead" : ss->have_leader ? "follow" : "-");
+    double ui_avg = t && t->ui_frames ? (double)t->ui_ms_sum / t->ui_frames : 0;
+    put("STAT", "load avg %.0f%% peak %.0f%% late %u | peak %.2f rms %.3f clips %u | leveller avg %.1f min %.1f | screen "
+                "avg %.0f ms max %u ms | audio %s | sync %s",
+        load, peak_load, t ? t->late : 0, s.peak, rms, s.clips, lev, s.lev_min, ui_avg, t ? t->ui_ms_max : 0,
+        t && t->rt ? "realtime" : "normal", ss->leading ? "lead" : ss->have_leader ? "follow" : "-");
     if (level == LOG_DETAIL)
         for (int v = 0; v < NS; v++) {
             if (!song.on[v] || s.f_target[v] <= 0.f)
@@ -132,14 +134,17 @@ static void status(AudioTiming *t, double secs)
     if (load > 60)
         put("HINT", "audio load %.0f%%: raise JD_BUFFER to 2048 or set JD_RATE=44100 in launch.sh", load);
     if (t && t->late)
-        put("HINT", "%u audio dropouts (crackles): raise JD_BUFFER, or fewer sympathetic strings", t->late);
+        put("HINT", "%u audio dropouts (crackles): raise JD_BUFFER, or fewer sympathetic strings%s", t->late,
+            t->ui_ms_max > 33 ? "; the screen is slow too: START + Y turns the projection off" : "");
+    else if (t && t->ui_ms_max > 50)
+        put("HINT", "the screen took up to %u ms a frame: START + Y turns the projection off", t->ui_ms_max);
     if (s.clips)
         put("HINT", "%u samples near full scale: MASTER above 80 drives the clipper; lower it for a cleaner sound", s.clips);
     if (lev > 27.f)
         put("HINT", "the sound is very quiet and is being lifted fully: raise LEVEL, BOW or BREATH, or TONE");
     (void)secs;
     if (t)
-        memset(t, 0, offsetof(AudioTiming, buffer_us));
+        memset(t, 0, offsetof(AudioTiming, buffer_us)); /* the counters; the buffer and rt stay */
     fflush(f);
 }
 

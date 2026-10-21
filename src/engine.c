@@ -563,6 +563,7 @@ typedef struct {
     float f_sound; /* the voice's pitch in Hz now */
     int voice_was; /* SP_VOICE last sub-block: a change starts the voice afresh */
     int latched;   /* LATCH: LATCH_PLUCK or LATCH_BOW while it drones, else LATCH_OFF */
+    int switching; /* SP_VOICE changed: fading out before the new voice */
 
     /* per sub-block targets, ramped */
     float D, D_cur, lvl, lvl_cur;
@@ -646,7 +647,7 @@ static float midi_hz(float m) { return 440.f * exp2f((m - 69.f) / 12.f); }
 #define CHIFF_MS 0.03f
 static void string_pluck(String *s, float amp)
 {
-    if (engine_voice_wind((int)(s - str))) {
+    if (s->voice_was > 0) { /* the voice sounding now */
         /* a tongued note: a push of breath that falls back, with a chiff */
         s->art_t = 0.f;
         s->art_amp = amp;
@@ -1627,7 +1628,7 @@ static float latch_k(const String *st, const int *P, int wind)
 static void wind_setup(WindVoice *v, String *st, const int *P, float hz, float sps16, float hand_rel)
 {
     const Material *m = &materials[song.gp[GP_MATERIAL]];
-    int ex = P[SP_VOICE] - 1;
+    int ex = st->voice_was - 1; /* the sounding voice (a change waits for its fade) */
     v->ex = ex;
     v->reg = P[SP_HARM] + 1;
     if (st->over) /* overblown by hand: a reed like a clarinet's jumps a twelfth, the rest an octave */
@@ -2011,9 +2012,12 @@ void engine_render(int16_t *out, int frames)
                 st->midi_cur += (base_midi[s] - st->midi_cur) * (1.f - expf(-4.f * nn / glide_samps));
             float hz = midi_hz(st->midi_cur + m_pitch);
             hz = fmaxf(20.f, fminf(hz, sr / 8.f));
-            if (song.sp[s][SP_VOICE] != st->voice_was) {
-                /* a new kind of voice: clear what the old one left in the
-                 * loop and fade the new one in */
+            /* a new kind of voice: the old one fades out first (20 ms), then
+             * what it left in the loop is cleared and the new one fades in,
+             * so a change never cuts the sound off with a click */
+            st->switching = song.sp[s][SP_VOICE] != st->voice_was;
+            if (st->switching && st->gain < 1e-3f) {
+                st->switching = 0;
                 st->voice_was = song.sp[s][SP_VOICE];
                 memset(st->buf, 0, sizeof st->buf);
                 memset(st->jet, 0, sizeof st->jet);
@@ -2023,7 +2027,7 @@ void engine_render(int16_t *out, int frames)
                 st->burst = 0;
                 st->art_t = -1.f;
             }
-            wv_on[s] = engine_voice_wind(s);
+            wv_on[s] = st->voice_was > 0; /* the voice sounding now, until a change has faded */
             if (wv_on[s]) {
                 wind_setup(&wv[s], st, song.sp[s], hz, sps16, hand_rel);
                 wv[s].base *= m_bow;
@@ -2100,7 +2104,7 @@ void engine_render(int16_t *out, int frames)
             float L = 0.f, R = 0.f, br = 0.f;
             for (int s = 0; s < NS; s++) {
                 String *st = &str[s];
-                float on_t = song.on[s] ? 1.f : 0.f;
+                float on_t = song.on[s] && !st->switching ? 1.f : 0.f;
                 st->gain += (on_t - st->gain) * g_ramp;
                 st->D_cur += dD[s];
                 st->lvl_cur += dl[s];
@@ -2492,6 +2496,14 @@ void engine_init(int sample_rate)
     memset(hil_s, 0, sizeof hil_s);
     hil_d[0] = hil_d[1] = 0.f;
     bin_c = 1.f, bin_s = 0.f;
+    /* and nothing left from before: no old echoes in the delay, the same
+     * noise every time from here */
+    memset(dly, 0, sizeof dly);
+    dly_lp[0] = dly_lp[1] = 0.f;
+    memset(bin_lp, 0, sizeof bin_lp);
+    f_ic1[0] = f_ic1[1] = f_ic2[0] = f_ic2[1] = 0.f;
+    memset(flash, 0, sizeof flash);
+    rng = 0x9e3779b9u;
 }
 
 /* ------------------------------------------------------------ song state */

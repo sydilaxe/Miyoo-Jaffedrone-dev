@@ -377,12 +377,14 @@ SELECT** cycles it OFF, BASIC and DETAIL; LOG shows in the header while it runs,
   line), page changes, chord changes with their scale, and the audio setup at start. DETAIL adds every press
   (with L2/R2 held) and hand playing: plucks, tongued notes, bowing or blowing, with how long.
 - **Status:** every 10 s (every second in DETAIL), for example:
-  `STAT load avg 4% peak 9% late 0 | peak 0.71 rms 0.18 clips 0 | leveller avg 3.1 min 1.9 | sync lead`
+  `STAT load avg 4% peak 9% late 0 | peak 0.71 rms 0.18 clips 0 | leveller avg 3.1 min 1.9 | screen avg 12 ms max 20 ms | audio realtime | sync lead`
 
   - **load:** how much of each audio buffer's time rendering took.
   - **late:** audio dropouts: times the sound card ran out of sound. These are crackles.
   - **peak**, **rms** and **clips:** the output level, and samples near full scale.
   - **leveller:** how much the leveller lifts the sound.
+  - **screen:** how long each frame of the screen takes to draw (about 33 ms is one frame at 30 a second).
+  - **audio:** `realtime` when the audio thread runs ahead of everything else, as it should on the Miyoo.
 - **Voices** (DETAIL): each voice's wanted and measured pitch in hertz and cents, its meter, its breath or
   bow, and the lip voice's tuning correction. The pitch is measured from the voice's own sound by the same
   method the test harness uses.

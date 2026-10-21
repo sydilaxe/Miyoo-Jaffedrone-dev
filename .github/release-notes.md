@@ -3,6 +3,11 @@ Jaffedrone test build for the Miyoo Mini Plus (OnionOS).
 **Install:** unzip `Jaffedrone-miyoo.zip` at the root of the SD card (it contains `App/Jaffedrone/`),
 then open **Apps → Jaffedrone**.
 
+**New in 0.8.1**
+- Fixes for clicks and dropouts: the audio thread runs at real-time priority, the screen always pauses
+  between frames and draws the projection a row at a time (much lighter), and changing a voice fades the
+  old one out instead of cutting it. The log shows the screen's frame time and the audio priority.
+
 **New in 0.8**
 - LATCH play mode (START + A): every string is silent until you pluck (L1) or bow (R1) it, then drones
   until you play it again, and fades over its own RELEASE (0.05 to 20 s; up and down on PLAY).

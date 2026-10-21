@@ -1697,27 +1697,40 @@ static void draw_projection(int y0, int y1)
         pj_beam(0, y0, y1, str * 0.7f * d * r, C_SAND);
     }
     /* the spectrum as siding boards, each pair's tops sloping into a valley
-     * like the house's two roofs, a brighter trim along each roof edge */
-    int floor_y = y1, room = y1 - y0;
+     * like the house's two roofs, a brighter trim along each roof edge.
+     * Drawn a row at a time, in memory order: a board's pixels at or below
+     * its sloping top form one span per row */
+    int floor_y = y1, room = y1 - y0, w = PJ_CELL - 2;
+    int top0[PJ_COLS];
+    uint32_t body[PJ_COLS], trim[PJ_COLS];
+    int ymin = floor_y;
     for (int c = 0; c < PJ_COLS; c++) {
         float u = (c + 0.5f) / PJ_COLS;
         float side = ombak ? 2.f * fabsf(sway) - 1.f : sway * (1.f - 2.f * u);
-        float gain = 1.f + 0.6f * d * side;
-        float h = pj_lev[c] * room * 0.75f;
-        if (h < 3.f)
-            continue;
+        float gain = 1.f + 0.6f * d * side, h = pj_lev[c] * room * 0.75f;
+        top0[c] = h < 3.f ? floor_y : floor_y - (int)h; /* the top at the high end of the slope */
         uint32_t col = gfx_mix(C_COPPER, C_SEA, u);
-        uint32_t body = pj_light(col, 0.5f * gain * str), trim = pj_light(col, 1.1f * gain * str);
-        int x0 = c * PJ_CELL + 1, w = PJ_CELL - 2, down = c & 1 ? -1 : 1; /* left board falls right, right falls left */
-        for (int i = 0; i < w; i++) {
-            int dip = (int)((down > 0 ? i : w - 1 - i) * 0.9f); /* the shed roof's slope */
-            int top = floor_y - (int)h + dip;
-            if (top >= floor_y - 2)
-                continue;
-            gfx_add(x0 + i, top, 1, 2, trim);
-            gfx_add(x0 + i, top + 2, 1, floor_y - top - 2, body);
-        }
+        body[c] = pj_light(col, 0.5f * gain * str), trim[c] = pj_light(col, 1.1f * gain * str);
+        if (top0[c] < ymin)
+            ymin = top0[c];
     }
+    for (int y = ymin; y < floor_y; y++)
+        for (int c = 0; c < PJ_COLS; c++) {
+            int dy = y - top0[c];
+            if (dy < 0 || top0[c] >= floor_y - 2)
+                continue;
+            /* the shed roof falls 0.9 px a pixel: here it covers n pixels of
+             * the board, counted from the high end */
+            int n = (int)(dy / 0.9f) + 1, nt = (int)((dy - 2) / 0.9f) + 1; /* lit, and lit below the trim */
+            n = n > w ? w : n;
+            nt = dy < 2 ? 0 : nt > w ? w : nt;
+            int left = !(c & 1); /* left boards fall to the right: their high end is the left */
+            int x0 = c * PJ_CELL + 1;
+            if (nt > 0)
+                gfx_add(left ? x0 : x0 + w - nt, y, nt, 1, body[c]);
+            if (n > nt)
+                gfx_add(left ? x0 + nt : x0 + w - n, y, n - nt, 1, trim[c]);
+        }
 }
 
 void ui_draw(uint32_t *fb)

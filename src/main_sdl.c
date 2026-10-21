@@ -1,5 +1,7 @@
 /* Miyoo Mini (Plus) front-end: SDL 1.2 as shipped with OnionOS. */
 #include <SDL/SDL.h>
+#include <pthread.h>
+#include <sched.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -39,6 +41,14 @@ static uint64_t clock0_us, made_us;
 static void audio_cb(void *ud, Uint8 *stream, int len)
 {
     (void)ud;
+    static int prio_tried;
+    if (!prio_tried) {
+        /* the audio thread first, always: drawing the screen must never hold
+         * it up (the Miyoo runs the app as root, so this is allowed) */
+        prio_tried = 1;
+        struct sched_param sp = {.sched_priority = 40};
+        timing.rt = pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp) == 0;
+    }
     uint64_t t0 = now_us();
     if (!clock0_us)
         clock0_us = t0;
@@ -174,8 +184,13 @@ int main(int argc, char **argv)
                 song_save(SAVE_PATH);
         }
         Uint32 spent = SDL_GetTicks() - now;
-        if (spent < 33)
-            SDL_Delay(33 - spent);
+        timing.ui_frames++;
+        timing.ui_ms_sum += spent;
+        if (spent > timing.ui_ms_max)
+            timing.ui_ms_max = spent;
+        /* about 30 frames a second, and always a pause, even after a slow
+         * frame, so the screen never takes the processor from the audio */
+        SDL_Delay(spent < 29 ? 33 - spent : 4);
     }
 
     song_save(SAVE_PATH);

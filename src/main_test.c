@@ -755,16 +755,22 @@ int main(int argc, char **argv)
         double mean = 0;
         for (int i = 0; i < ne; i++)
             mean += env[i] / ne;
-        int best = 0;
-        double bestc = -1e30;
-        for (int lag = 10; lag < 150; lag++) {
-            double cc = 0;
+        /* the envelope's self-match falls from lag 0 and rises again at the
+         * period: skip to where it first goes below zero, then take the peak */
+        static double cc[160];
+        for (int lag = 1; lag < 160; lag++) {
+            cc[lag] = 0;
             for (int i = 0; i + lag < ne; i++)
-                cc += (env[i] - mean) * (env[i + lag] - mean);
-            cc /= ne - lag;
-            if (cc > bestc)
-                bestc = cc, best = lag;
+                cc[lag] += (env[i] - mean) * (env[i + lag] - mean);
+            cc[lag] /= ne - lag;
         }
+        int start = 1, best = 0;
+        while (start < 159 && cc[start] > 0)
+            start++;
+        double bestc = -1e30;
+        for (int lag = start; lag < 160; lag++)
+            if (cc[lag] > bestc)
+                bestc = cc[lag], best = lag;
         double swell_hz = best ? RATE / 240.0 / best : 0;
         printf("ombak 4 Hz: L/R flips %d (want 0), swells %.1f per s (want about 4)\n", flips, swell_hz);
     }
@@ -1215,6 +1221,28 @@ int main(int argc, char **argv)
         printf("save compat v0.7: load=%d scale=%s voice5=%s release=%d playmode=%d bpm=%d\n", ok,
                engine_scale_name(song.gp[GP_SCALE]), engine_voice_name(song.sp[4][SP_VOICE]), song.sp[4][SP_RELEASE],
                song.gp[GP_PLAYMODE], song.gp[GP_BPM]);
+    }
+    /* switching a voice while it sounds: the old voice fades out before the
+     * new one starts, so the change makes no step bigger than playing does */
+    {
+        song_default();
+        engine_init(RATE);
+        engine_set_playing(1);
+        song.gp[GP_CHANGES] = 0;
+        song.fx[FX_DMIX] = song.fx[FX_VSEND] = song.fx[FX_SCOUNT] = song.fx[FX_BODY] = 0;
+        for (int v = 0; v < NS; v++)
+            song.on[v] = v == 2, song.sp[v][SP_PON] = song.sp[v][SP_BON] = 0;
+        song.sp[2][SP_BOW] = 70;
+        engine_render(pcm, RATE * 3);
+        /* a cut leaves the moments after the change nearly silent; the fade
+         * still holds most of the sound 5 ms later */
+        engine_render(pcm, RATE / 2);
+        double before = rms_of(pcm, RATE / 2 - 480, 480);
+        song.sp[2][SP_VOICE] = 1 + EX_REED; /* string -> reed while it plays */
+        engine_render(pcm, RATE / 4);
+        double after = rms_of(pcm, 384, 240); /* 8 .. 13 ms: past the limiter's 6 ms look-ahead */
+        printf("voice switch: %.0f%% of the sound still there 8 ms after the change (want over 75%%: a fade, not a "
+               "cut)\n", 100.0 * after / before);
     }
     /* the LATCH screen: 1 plucked, 3 bowed, 4 fading, the rest silent */
     {

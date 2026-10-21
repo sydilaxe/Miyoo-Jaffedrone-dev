@@ -238,17 +238,20 @@ void gfx_poly_a(const float *xy, int n, uint32_t c, int alpha)
     poly_alpha = 255;
 }
 
-/* add light: each channel of c is added, saturating at full */
+/* add light: each channel of c is added, saturating at full. All three
+ * channels at once: halve both (dropping their lowest bit), add, and where
+ * a channel overflows its top bit fill it with ones */
 void gfx_add(int x, int y, int w, int h, uint32_t c)
 {
     if (!clip(&x, &y, &w, &h))
         return;
-    uint32_t cr = c >> 16 & 255, cg = c >> 8 & 255, cb = c & 255;
+    uint32_t ch = (c & 0xfefefe) >> 1;
     for (int j = y; j < y + h; j++) {
         uint32_t *row = fb + j * SCREEN_W + x;
         for (int i = 0; i < w; i++) {
-            uint32_t d = row[i], r = (d >> 16 & 255) + cr, g = (d >> 8 & 255) + cg, b = (d & 255) + cb;
-            row[i] = (r > 255 ? 255 : r) << 16 | (g > 255 ? 255 : g) << 8 | (b > 255 ? 255 : b);
+            uint32_t t = ((row[i] & 0xfefefe) >> 1) + ch;
+            uint32_t m = t & 0x808080;
+            row[i] = ((t << 1) & 0xfefefe) | ((m << 1) - (m >> 7));
         }
     }
 }
