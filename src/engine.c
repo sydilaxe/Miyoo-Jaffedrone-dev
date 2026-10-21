@@ -641,6 +641,16 @@ static int64_t last16 = -1;  /* the last 16th the rhythms acted on */
 static float flash[NS][NRING];
 /* sympathetic coupling: every string hears the others through the bridge */
 static float bridge, bridge_x1, bridge_hp;
+/* AIR (a prototype): the voices hear one another through the air of a
+ * shared room. Each is placed by its PAN across a small stage; what it hears
+ * is the others' sound, later and fainter with distance (343 m/s), and the
+ * room's reverberation, and that sound pushes on its string, reed or body. */
+float engine_air = 0.f, engine_room = 0.f; /* 0 .. 1, off by default */
+float air_k[3] = {0.05f, 0.05f, 0.05f}; /* TUNING: string, wind, struck */
+#define AIRN 1024                           /* up to 21 ms of travel: about 7 m */
+static float air_hist[NS][AIRN];
+static int air_w;
+static float room_prev;
 /* body: five resonant modes per channel */
 #define NMODE 5
 static float body_ic[2][NMODE][2];
@@ -2245,6 +2255,22 @@ void engine_render(int16_t *out, int frames)
     /* COUPLE: how much of the bridge each string hears */
     float couple = song.fx[FX_SYMP] / 100.f;
     couple = couple * couple * 0.012f;
+    /* AIR: where each voice stands (PAN across 3 m, the voices a little
+     * apart in depth), how long the others' sound takes to reach it and how
+     * faint it has grown */
+    int air_on = engine_air > 0.f || engine_room > 0.f;
+    int air_d[NS][NS];
+    float air_g[NS][NS], room_k = engine_room * 0.5f;
+    if (air_on)
+        for (int a = 0; a < NS; a++)
+            for (int b = 0; b < NS; b++) {
+                float dx = (song.sp[a][SP_PAN] - song.sp[b][SP_PAN]) / 50.f * 1.5f, dz = 0.4f + 0.25f * abs(a - b);
+                float d = sqrtf(dx * dx + dz * dz);
+                air_d[a][b] = (int)(d / 343.f * sr) + 1;
+                if (air_d[a][b] > AIRN - 1)
+                    air_d[a][b] = AIRN - 1;
+                air_g[a][b] = a == b ? 0.f : engine_air * 0.4f / d;
+            }
     /* BODY: five resonant modes. WOOD and GOURD are fixed boxes, BRONZE rings
      * inharmonically and HARMONIC on the overtones, both tuned to the root */
     float body_amt = song.fx[FX_BODY] / 100.f, bm_a1[NMODE], bm_a2[NMODE], bm_a3[NMODE], bm_g[NMODE];
@@ -2543,12 +2569,21 @@ void engine_render(int16_t *out, int frames)
                 st->gain += (on_t - st->gain) * g_ramp;
                 st->D_cur += dD[s];
                 st->lvl_cur += dl[s];
+                if (air_on)
+                    air_hist[s][air_w] = 0.f; /* silent unless it sounds below */
                 if (st->gain < 1e-4f && !song.on[s])
                     continue;
+                float air = 0.f;
+                if (air_on) { /* the others, as they reach this voice, and the room */
+                    for (int j = 0; j < NS; j++)
+                        air += air_g[s][j] * air_hist[j][(air_w - air_d[s][j]) & (AIRN - 1)];
+                    air += room_k * room_prev;
+                    air = air / (1.f + fabsf(air) * 4.f); /* the air carries only so much */
+                }
 
                 float y, o;
                 if (pv_on[s]) { /* a struck body barely hears the bridge */
-                    perc_tick(st, &pv[s], 0.2f * couple * (bridge - st->last_y), &y, &o);
+                    perc_tick(st, &pv[s], 0.2f * couple * (bridge - st->last_y) + air_k[2] * air, &y, &o);
                     if (fold_g[s] > 0.f) {
                         float g = 1.f + fold_g[s] * 5.f, xf = o * g, dx = xf - st->fold_x1, f;
                         f = fabsf(dx) > 1e-4f ? (fold_F(xf) - fold_F(st->fold_x1)) / dx : fold_f(0.5f * (xf + st->fold_x1));
@@ -2560,7 +2595,7 @@ void engine_render(int16_t *out, int frames)
                     goto voice_out;
                 }
                 if (wv_on[s]) { /* air couples more gently than a bridge */
-                    wind_tick(st, &wv[s], 0.3f * couple * (bridge - st->last_y), &y, &o);
+                    wind_tick(st, &wv[s], 0.3f * couple * (bridge - st->last_y) + air_k[1] * air, &y, &o);
                     if (fold_g[s] > 0.f) {
                         float g = 1.f + fold_g[s] * 5.f, xf = o * g, dx = xf - st->fold_x1, f;
                         f = fabsf(dx) > 1e-4f ? (fold_F(xf) - fold_F(st->fold_x1)) / dx : fold_f(0.5f * (xf + st->fold_x1));
@@ -2650,7 +2685,7 @@ void engine_render(int16_t *out, int frames)
                 st->bow_lp += (fnoise() - st->bow_lp) * bow_col[s] * (0.35f + 0.65f * open);
                 float ex = st->bow_lp * play_g * (bow_amp[s] * m_bow * open * (headroom + (hr - headroom) * h) + 0.09f * h * hr);
                 /* the other strings, heard through the bridge */
-                ex += couple * (bridge - st->last_y);
+                ex += couple * (bridge - st->last_y) + air_k[0] * air;
                 st->last_y = y * st->gain;
                 br += st->last_y;
                 if (st->bounce_n > 0 && --st->bounce_n == 0) { /* the hammer bounces back */
@@ -2705,6 +2740,8 @@ void engine_render(int16_t *out, int frames)
                 }
                 /* GATE: the voice's sound follows its bow (breath) ring */
                 o *= st->lvl_cur * st->gain * play_g * (1.f - gate_d[s] + gate_d[s] * fmaxf(st->bow_env, st->hand_env));
+                if (air_on)
+                    air_hist[s][air_w] = o; /* what it sends into the air */
                 float pan = song.sp[s][SP_PAN] / 50.f;
                 L += o * (1.f - pan);
                 R += o * (1.f + pan);
@@ -2835,6 +2872,8 @@ void engine_render(int16_t *out, int frames)
                 fdn_mod -= 6.2831853f;
             /* the reverb hears the sound after TONE, so a dark tone has dark echoes */
             reverb_tick((post + (dl0 + dr0) * 0.5f * dly_mix) * vsend * VERB_IN * 1.4f, &wl, &wr, fdn_g, fdn_damp, fdn_mv);
+            room_prev = 0.5f * (wl + wr);
+            air_w = (air_w + 1) & (AIRN - 1);
             L += wl;
             R += wr;
 
@@ -2961,6 +3000,9 @@ void engine_init(int sample_rate)
     f_ic1[0] = f_ic1[1] = f_ic2[0] = f_ic2[1] = 0.f;
     memset(flash, 0, sizeof flash);
     master_g = play_g = 0.f;
+    memset(air_hist, 0, sizeof air_hist);
+    air_w = 0;
+    room_prev = 0.f;
     perc_gen++;
     fdn_mod = 0.f;
     fdn_w = la_w = 0;

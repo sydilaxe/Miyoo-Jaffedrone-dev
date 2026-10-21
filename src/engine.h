@@ -155,6 +155,7 @@ int engine_voice_wind(int s);          /* 1 if voice s is a wind voice */
 int engine_voice_perc(int s);          /* 1 if voice s is a struck voice */
 int engine_perc_count(const Song *g);  /* how many voices are struck */
 extern int engine_perc_skip;  /* skip struck modes that have died away (on; off only in tests) */
+extern float engine_air, engine_room; /* AIR prototype: voices hear each other and the room (0 .. 1) */
 extern int engine_perc_cache; /* keep struck modes between sub-blocks (on; off only in tests) */
 int engine_wind_count(const Song *g);  /* how many voices are winds */
 const char *engine_voice_name(int v);  /* an SP_VOICE value: STRING, LIP .. */
