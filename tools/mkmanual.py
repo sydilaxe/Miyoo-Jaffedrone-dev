@@ -4,11 +4,42 @@ drawn, with the app's own screen on it and the buttons for each command
 lit and numbered.
 
 usage: mkmanual.py SHOTS_DIR OUT.pdf
-  SHOTS_DIR holds the screenshots `build/jd_test` writes (play.ppm, ...).
+         SHOTS_DIR holds the screenshots `build/jd_test` writes (play.ppm, ...)
+       mkmanual.py --check OUT.pdf
+         fails if the manual is older than what it is made from
+
+The manual carries a fingerprint of its sources (INPUTS: the screens and
+controls, the version, this script); --check compares it with the files
+now, so CI catches a change that was not followed by `make manual`.
 """
+import hashlib
 import os
 import re
 import sys
+
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+# what the manual shows: change any of these and the manual must be rebuilt
+INPUTS = ["src/ui.c", "src/engine.h", "src/logo_data.h", "tools/mkmanual.py", "dist/Jaffedrone/splash.jdi"]
+
+
+def fingerprint():
+    h = hashlib.sha256()
+    for f in INPUTS:
+        h.update(f.encode() + b"\0" + open(os.path.join(ROOT, f), "rb").read())
+    return h.hexdigest()[:16]
+
+
+def check(pdf):
+    want = "jdmanual-" + fingerprint()
+    data = open(pdf, "rb").read()
+    if want.encode() in data:
+        print("manual is up to date (%s)" % want)
+        return 0
+    print("the manual is out of date: run `make manual` and commit %s" % os.path.relpath(pdf, ROOT))
+    return 1
+
+if __name__ == "__main__" and len(sys.argv) > 2 and sys.argv[1] == "--check":
+    sys.exit(check(sys.argv[2]))  # needs nothing but Python
 
 from PIL import Image
 from reportlab.lib import colors
@@ -22,7 +53,6 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (Flowable, KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table,
                                 TableStyle)
 
-ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 FONT_DIR = "/usr/share/fonts/truetype/dejavu"
 pdfmetrics.registerFont(TTFont("Sans", os.path.join(FONT_DIR, "DejaVuSans.ttf")))
 pdfmetrics.registerFont(TTFont("Sans-Bold", os.path.join(FONT_DIR, "DejaVuSans-Bold.ttf")))
@@ -295,7 +325,8 @@ def later(c, doc):
 
 def build(out):
     doc = SimpleDocTemplate(out, pagesize=letter, leftMargin=40, rightMargin=40, topMargin=46, bottomMargin=42,
-                            title="Jaffedrone manual", author="Jaffedrone", subject="User manual")
+                            title="Jaffedrone manual", author="Jaffedrone", subject="User manual",
+                            keywords="jdmanual-" + fingerprint())
     s = [PageBreak()]
 
     # -------------------------------------------------- getting started

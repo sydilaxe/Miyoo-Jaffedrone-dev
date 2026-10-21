@@ -79,12 +79,13 @@ miyoo: $(SRC) src/main_sdl.c $(HDR) $(SDL_LIB)
 	$(CROSS)gcc -marm -mcpu=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard $(CFLAGS) -I$(SDL_INC) -o $(APP)/jaffedrone \
 		$(SRC) src/main_sdl.c $(SDL_LIB) -lm -lpthread -Wl,--allow-shlib-undefined -s
 
-package: miyoo $(APP)/splash.jdi
+package: miyoo $(APP)/splash.jdi docs/Jaffedrone-Manual.pdf
 	rm -rf build/sd build/Jaffedrone-miyoo.zip
 	mkdir -p build/sd/App
 	cp -r $(APP) build/sd/App/
 	rm -f build/sd/App/Jaffedrone/*.sav* build/sd/App/Jaffedrone/*.jds build/sd/App/Jaffedrone/log.txt \
 		build/sd/App/Jaffedrone/jaffedrone_log.txt* build/sd/App/Jaffedrone/jaffedrone.cfg build/sd/App/Jaffedrone/jaffedrone_ui.cfg
+	cp docs/Jaffedrone-Manual.pdf build/sd/App/Jaffedrone/
 	chmod +x build/sd/App/Jaffedrone/launch.sh build/sd/App/Jaffedrone/jaffedrone
 	cd build/sd && zip -qr ../Jaffedrone-miyoo.zip App
 

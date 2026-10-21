@@ -10,3 +10,8 @@ Without zig, the Miyoo binary also builds with the OnionOS toolchain image
 (`aemiii91/miyoomini-toolchain`, or `mirror.gcr.io/aemiii91/miyoomini-toolchain`) by calling its
 `arm-linux-gnueabihf-gcc` on the same sources with `-marm -mcpu=cortex-a7 -mfpu=neon-vfpv4
 -mfloat-abi=hard` and linking `third_party/onion-lib/libSDL-1.2.so.0`.
+
+The manual (`docs/Jaffedrone-Manual.pdf`, made by `tools/mkmanual.py` from the test's
+screenshots) ships in the Miyoo zip. When a function, control or screen is added or changed,
+add or update its section in `tools/mkmanual.py`, run `make manual` and commit the PDF with
+the change. CI fails when the manual is older than its sources (`mkmanual.py --check`).

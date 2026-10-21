@@ -22,4 +22,4 @@ then open **Apps → Jaffedrone**.
 If you hear crackles, set `JD_BUFFER=2048` in `App/Jaffedrone/launch.sh`. The log is written to
 `App/Jaffedrone/jaffedrone_log.txt` (START + SELECT cycles OFF / BASIC / DETAIL).
 
-See the README for the controls.
+The manual, `App/Jaffedrone/Jaffedrone-Manual.pdf`, shows every control on a drawing of the Miyoo.

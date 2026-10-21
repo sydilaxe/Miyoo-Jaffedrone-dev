@@ -23,9 +23,10 @@ jobs:
         run: |
           # generated files are committed; keep make from regenerating them
           touch src/font_data.h src/logo_data.h dist/Jaffedrone/icon.png dist/Jaffedrone/splash.jdi
-          command -v zip >/dev/null || (apt-get update && apt-get install -y zip)
+          command -v zip >/dev/null && command -v unzip >/dev/null || (apt-get update && apt-get install -y zip unzip)
           make package CROSS=/opt/miyoomini-toolchain/usr/bin/arm-linux-gnueabihf-
           ls -l build/Jaffedrone-miyoo.zip
+          unzip -l build/Jaffedrone-miyoo.zip | grep -q "App/Jaffedrone/Jaffedrone-Manual.pdf"
       - uses: actions/upload-artifact@v4
         with:
           name: Jaffedrone-miyoo
@@ -42,6 +43,8 @@ jobs:
           make build/jd_test
           mkdir -p build/test
           build/jd_test build/test | tee build/test/results.txt
+      - name: The manual is up to date
+        run: python3 tools/mkmanual.py --check docs/Jaffedrone-Manual.pdf
       - name: Check the results
         run: |
           r=build/test/results.txt
