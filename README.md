@@ -330,22 +330,6 @@ sleep (Jirakittayakorn and Wongsawat 2018), and carriers of about 250–400 Hz (
 [a review](https://pmc.ncbi.nlm.nih.gov/articles/PMC6165862/) and
 [the sleep study](https://www.frontiersin.org/journals/human-neuroscience/articles/10.3389/fnhum.2018.00387/full)).
 
-## Projection
-
-Like the light projected across the Jaffe house's ceiling at night, a faint projection glows behind the
-screens, drawn in the house's shapes:
-
-- **The spectrum as siding:** each band of the sound is a vertical board, from the lowest notes on the left
-  to the highest on the right, copper to mint, rising and falling as the drone plays. Each pair of boards'
-  tops slope into a valley like the house's two shed roofs, with a brighter trim along each roof edge.
-- **The beat as projector beams:** when binaural is on, two beams fall from the top corners, like the
-  projectors' beams through the room: a faint haze with a fan of thin rays, each lit by a band of the
-  spectrum (copper to mint), swaying slowly, with dust drifting in the light and a glow where the rays
-  land. They trade left and right at the beat, as the two ears hear it; a journey can be watched slowing
-  down. With OMBAK they swell and fade together.
-
-START + Y switches it between SOFT, BRIGHT and OFF.
-
 ## Sound quality
 
 - Each string reads its delay line with four-point Hermite interpolation. Strings keep their brightness on
@@ -403,7 +387,6 @@ on the shoulder buttons.
 | SELECT | next chord |
 | START (tap) | start / stop the drone |
 | START + L1 / R1 | previous / next page (on SOUND, COMPOSE and MIX, L1 / R1 alone also work) |
-| START + Y | the projection: SOFT, BRIGHT or OFF (remembered) |
 | START + A | PLAY MODE: RINGS or LATCH (see Latch) |
 | MENU | exit |
 

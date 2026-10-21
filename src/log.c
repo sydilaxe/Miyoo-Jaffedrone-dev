@@ -135,7 +135,7 @@ static void status(AudioTiming *t, double secs)
         put("HINT", "audio load %.0f%%: raise JD_BUFFER to 2048 or set JD_RATE=44100 in launch.sh", load);
     if (t && t->late)
         put("HINT", "%u audio dropouts (crackles): raise JD_BUFFER, or fewer sympathetic strings%s", t->late,
-            t->ui_ms_max > 33 ? "; the screen is slow too: START + Y turns the projection off" : "");
+            t->ui_ms_max > 33 ? "; the screen is slow too (it slows to 20 frames a second under load)" : "");
     if (s.clips)
         put("HINT", "%u samples near full scale: MASTER above 80 drives the clipper; lower it for a cleaner sound", s.clips);
     int idle = song.gp[GP_PLAYMODE] == PLAY_LATCH; /* LATCH with every string let go is meant to be quiet */

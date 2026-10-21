@@ -8,7 +8,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define JD_VERSION "0.11.0"
+#define JD_VERSION "0.11.1"
 
 #define NS 5
 #define NSP 27 /* params per string */
@@ -19,7 +19,6 @@
 #define NLP 4  /* params per LFO */
 #define NFX 17 /* effect params */
 #define NSYMP 12 /* most sympathetic strings */
-#define SCOPE_N 2048
 
 /* SP_NOTE is a scale degree above the root (in EQUAL, a semitone). Each
  * string has two Euclidean rings sharing one step length (SP_RATE): the
@@ -132,10 +131,6 @@ typedef struct {
     volatile float symp_meter;      /* sympathetic strings, all together */
     volatile uint32_t chords;     /* counts chord changes (manual and CHANGES) */
     volatile int latch[NS];        /* LATCH: how each string was started (LATCH_OFF when let go) */
-    /* the last SCOPE_N samples of the output (mono), for the projection;
-     * scope_w counts samples written */
-    volatile float scope[SCOPE_N];
-    volatile uint32_t scope_w;
     volatile int rate;
 } Live;
 

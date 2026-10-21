@@ -3,6 +3,10 @@ Jaffedrone test build for the Miyoo Mini Plus (OnionOS).
 **Install:** unzip `Jaffedrone-miyoo.zip` at the root of the SD card (it contains `App/Jaffedrone/`),
 then open **Apps → Jaffedrone**.
 
+**New in 0.11.1**
+- More room for sound: the projection is gone, the screen runs below the audio and slows to 20 frames a
+  second when the sound is working hard. (A heavy patch of struck voices could crackle before.)
+
 **New in 0.11**
 - Metal drones: RING from 95 up rings for up to ten minutes (DRONE), keeping its shimmer.
 - Beyond the acoustic: STRETCH reaches much further, and three new bodies, GLASS, CHORD (tuned to the
@@ -25,7 +29,6 @@ then open **Apps → Jaffedrone**.
 
 **New in 0.8.2**
 - LATCH: a long RELEASE now dies away properly (the leveller no longer lifts a fading string back up).
-- Richer projector beams: a fan of rays lit by the spectrum, with drifting dust and a glow where they land.
 
 **New in 0.8.1**
 - Fixes for clicks and dropouts: the audio thread runs at real-time priority, the screen always pauses
@@ -38,8 +41,6 @@ then open **Apps → Jaffedrone**.
 
 **New in 0.7**
 - A new wordmark, after a drawing and the Jaffe house, and a start-up screen on the house's roofline.
-- A projection behind the screens: the spectrum as siding boards with roof-valley tops, and binaural as
-  projector beams trading left and right (START + Y: SOFT, BRIGHT, OFF).
 - Balinese gong kebyar tunings BEGBEG, SEDANG and TIRUS, and binaural MODE OMBAK: the gamelan's paired
   beating, for both ears and the speaker.
 - Faster DSP (about 15% less work), and the single reed no longer jumps to its upper register at the attack.

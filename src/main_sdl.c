@@ -2,6 +2,7 @@
 #include <SDL/SDL.h>
 #include <pthread.h>
 #include <sched.h>
+#include <sys/resource.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -141,6 +142,10 @@ int main(int argc, char **argv)
               engine_voice_name(song.sp[4][SP_VOICE]), engine_scale_name(song.gp[GP_SCALE]));
         ui_lock = lock;
         ui_unlock = unlock;
+        /* the screen gives way: this (main) thread runs below everything the
+         * sound needs, the audio driver's helpers included */
+        if (setpriority(PRIO_PROCESS, 0, 10) != 0)
+            fprintf(stderr, "jaffedrone: could not lower the screen's priority\n");
         SDL_PauseAudio(0);
     }
     else
@@ -188,9 +193,13 @@ int main(int argc, char **argv)
         timing.ui_ms_sum += spent;
         if (spent > timing.ui_ms_max)
             timing.ui_ms_max = spent;
-        /* about 30 frames a second, and always a pause, even after a slow
-         * frame, so the screen never takes the processor from the audio */
-        SDL_Delay(spent < 29 ? 33 - spent : 4);
+        /* about 30 frames a second, 20 when the sound is working hard, and
+         * always a pause, even after a slow frame, so the screen never takes
+         * the processor from the audio */
+        Uint32 frame = 33;
+        if (timing.calls && timing.buffer_us && timing.us_sum / timing.calls > timing.buffer_us * 35 / 100)
+            frame = 50;
+        SDL_Delay(spent + 4 < frame ? frame - spent : 4);
     }
 
     song_save(SAVE_PATH);

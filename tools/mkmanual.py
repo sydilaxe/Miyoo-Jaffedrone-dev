@@ -539,20 +539,13 @@ def build(out):
                          "and tunes chords exactly. <b>ATTACK</b> and <b>RELEASE</b> set how the drone fades "
                          "in and out with " + B("START") + ".", P)), PageBreak()]
 
-    # -------------------------------------------------- quiet, projection, log
-    s += [Paragraph("The quiet view and the projection", H1),
+    # -------------------------------------------------- quiet view
+    s += [Paragraph("The quiet view", H1),
           side(Miyoo("quiet", {"L2": 1}),
                Paragraph("Tap " + B("L2") + " on PLAY for the quiet view: the five strings across the screen "
                          "with their rings, and only the chord in words. Tap again to come back.", P),
                table([(num(1), "tap " + B("L2"), "the quiet view on / off")], widths=(9 * mm, 20 * mm, None))),
-          Spacer(1, 6),
-          side(Miyoo("proj_left", {"START": 1, "Y": 1}),
-               Paragraph("Behind every page a faint projection glows, like the light across the Jaffe house's "
-                         "ceiling: the sound's spectrum as siding boards, low notes on the left, high on the "
-                         "right, each pair's tops sloping into a roof valley. With binaural on, two projector "
-                         "beams fall from the top corners and trade left and right at the beat.", P),
-               table([(num(1), B("START") + " + " + B("Y"), "projection SOFT, BRIGHT or OFF (remembered)")],
-                     widths=(9 * mm, 26 * mm, None))), PageBreak()]
+          Spacer(1, 10)]
 
     # -------------------------------------------------- binaural & tunings
     s += [Paragraph("Binaural, ombak and tunings", H1),
@@ -588,7 +581,6 @@ def build(out):
                       (B("START") + " + " + B("L1") + "/" + B("R1"), "previous / next page"),
                       (B("START") + " + " + B("A"), "PLAY MODE: RINGS / LATCH"),
                       ("LATCH " + B("B") + " / " + B("Y") + B("X"), "harmonic (held) / bow attack"),
-                      (B("START") + " + " + B("Y"), "projection SOFT / BRIGHT / OFF"),
                       (B("START") + " + " + B("SELECT"), "the log: OFF / BASIC / DETAIL"),
                       (B("SELECT"), "next chord"),
                       (B("L1"), "tap: strike; hold: pluck (wind: hard attack / tongue); LATCH: on / let go"),

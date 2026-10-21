@@ -553,7 +553,6 @@ void fparam_format(int p, char *b, int n)
 /* ------------------------------------------------------------------ dsp */
 
 static float sr;
-static uint32_t scope_i; /* the projection's sample count */
 static uint32_t rng = 0x9e3779b9u;
 static inline uint32_t xr(void)
 {
@@ -2793,9 +2792,7 @@ void engine_render(int16_t *out, int frames)
              * into soft noise instead of grainy steps */
             out[2 * n] = (int16_t)lrintf(L * 32000.f + frand() - frand());
             out[2 * n + 1] = (int16_t)lrintf(R * 32000.f + frand() - frand());
-            live.scope[scope_i++ & (SCOPE_N - 1)] = 0.5f * (L + R);
         }
-        live.scope_w = scope_i;
         for (int s = 0; s < NS; s++) {
             str[s].D_cur = str[s].D;
             str[s].lvl_cur = str[s].lvl;

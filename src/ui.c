@@ -43,10 +43,6 @@ static const char *const page_names[PAGE_COUNT] = {"PLAY", "SOUND", "COMPOSE", "
 static int page, cur_s;
 static int ring;  /* PLAY: the selected ring of the selected string */
 static int quiet; /* PLAY: the quiet view, strings and rings only */
-/* the projection: light behind the screens from the sound (see draw_projection) */
-enum { PJ_OFF, PJ_SOFT, PJ_BRIGHT, NPJ };
-static int pj_mode = PJ_SOFT;
-static void pj_set(int mode);
 static int l2_used, r2_used;
 static int bowing = -1; /* the string bowed by hand (R1 held) */
 static int latch_on(void) { return song.gp[GP_PLAYMODE] == PLAY_LATCH; }
@@ -709,14 +705,6 @@ static void action(int b, int repeats)
             start_used = 1;
             if (!repeats)
                 set_playmode(!latch_on());
-            return;
-        }
-        break;
-    case BTN_Y:
-        if (held[BTN_START]) { /* START + Y: the projection OFF, SOFT, BRIGHT */
-            start_used = 1;
-            if (!repeats)
-                pj_set((pj_mode + 1) % NPJ);
             return;
         }
         break;
@@ -1694,246 +1682,6 @@ static void draw_splash(uint32_t *fb)
     gfx_text((SCREEN_W - gfx_text_w(v, FONT_SMALL)) / 2, (int)(y + h + 16), v, C_SLATE, FONT_SMALL);
 }
 
-/* the projection: like the mosaics projected on the Jaffe house's ceiling,
- * a grid of small squares lit softly behind the screens. Each column is a
- * band of the spectrum (low on the left, high on the right, copper to
- * mint) rising as the sound does. With binaural on, the light sways
- * between the left and right halves at the beat, as the ears hear it. */
-#define PJ_CELL 10
-#define PJ_COLS (SCREEN_W / PJ_CELL)
-#define PJ_FFT 2048
-static float pj_lev[PJ_COLS], pj_ph;
-static int pj_k0[PJ_COLS + 1], pj_rate, pj_loaded;
-static uint64_t pj_ms;
-static const char *const pj_names[NPJ] = {"OFF", "SOFT", "BRIGHT"};
-
-static void pj_cfg_path(char *b, int n) { snprintf(b, n, "%s/jaffedrone_ui.cfg", preset_dir); }
-static void pj_set(int mode)
-{
-    pj_mode = mode;
-    char p[512];
-    pj_cfg_path(p, sizeof p);
-    FILE *f = fopen(p, "w");
-    if (f) {
-        fprintf(f, "projection=%d\n", mode);
-        fclose(f);
-    }
-    say("PROJECTION %s", pj_names[mode]);
-}
-static void pj_load(void)
-{
-    pj_loaded = 1;
-    char p[512];
-    pj_cfg_path(p, sizeof p);
-    FILE *f = fopen(p, "r");
-    int m;
-    if (f) {
-        if (fscanf(f, "projection=%d", &m) == 1 && m >= 0 && m < NPJ)
-            pj_mode = m;
-        fclose(f);
-    }
-}
-
-static void fft(float *re, float *im, int n)
-{
-    for (int i = 1, j = 0; i < n; i++) { /* bit reversal */
-        int bit = n >> 1;
-        for (; j & bit; bit >>= 1)
-            j ^= bit;
-        j ^= bit;
-        if (i < j) {
-            float t = re[i];
-            re[i] = re[j], re[j] = t;
-            t = im[i];
-            im[i] = im[j], im[j] = t;
-        }
-    }
-    for (int len = 2; len <= n; len <<= 1) {
-        float a = -6.2831853f / len, wr = cosf(a), wi = sinf(a);
-        for (int i = 0; i < n; i += len) {
-            float cr = 1.f, ci = 0.f;
-            for (int k = 0; k < len / 2; k++) {
-                int p = i + k, q = p + len / 2;
-                float xr = re[q] * cr - im[q] * ci, xi = re[q] * ci + im[q] * cr;
-                re[q] = re[p] - xr, im[q] = im[p] - xi;
-                re[p] += xr, im[p] += xi;
-                float t = cr * wr - ci * wi;
-                ci = cr * wi + ci * wr;
-                cr = t;
-            }
-        }
-    }
-}
-
-/* the spectrum now, in columns: each column's loudest bin, -66 .. -10 dB */
-static void pj_analyse(float dt)
-{
-    static float re[PJ_FFT], im[PJ_FFT], win[PJ_FFT];
-    int rate = live.rate ? live.rate : 48000;
-    if (rate != pj_rate) {
-        pj_rate = rate;
-        for (int i = 0; i < PJ_FFT; i++)
-            win[i] = 0.5f - 0.5f * cosf(6.2831853f * i / PJ_FFT);
-        for (int c = 0; c <= PJ_COLS; c++) /* 40 Hz .. 12 kHz, evenly in pitch */
-            pj_k0[c] = (int)(40.f * powf(300.f, (float)c / PJ_COLS) * PJ_FFT / rate);
-    }
-    uint32_t w = live.scope_w;
-    for (int i = 0; i < PJ_FFT; i++)
-        re[i] = live.scope[(w - PJ_FFT + i) & (SCOPE_N - 1)] * win[i], im[i] = 0.f;
-    fft(re, im, PJ_FFT);
-    const float norm = 16.f / ((float)PJ_FFT * PJ_FFT); /* a full-scale sine reads 0 dB */
-    for (int c = 0; c < PJ_COLS; c++) {
-        int k0 = pj_k0[c], k1 = pj_k0[c + 1] > k0 ? pj_k0[c + 1] : k0 + 1;
-        float m = 0.f;
-        for (int k = k0; k < k1 && k < PJ_FFT / 2; k++)
-            m = fmaxf(m, re[k] * re[k] + im[k] * im[k]);
-        float lev = (10.f * log10f(m * norm + 1e-12f) + 66.f) / 56.f;
-        lev = fminf(1.f, fmaxf(0.f, lev));
-        pj_lev[c] = lev > pj_lev[c] ? pj_lev[c] + (lev - pj_lev[c]) * 0.5f : fmaxf(lev, pj_lev[c] - dt * 0.6f);
-    }
-}
-
-/* light: scale a colour by v (0 .. 1) */
-static uint32_t pj_light(uint32_t c, float v)
-{
-    return (uint32_t)((c >> 16 & 255) * v) << 16 | (uint32_t)((c >> 8 & 255) * v) << 8 | (uint32_t)((c & 255) * v);
-}
-
-/* the projector beams: from a lens in a top corner, a faint haze of light
- * (on every other line) and through it a fan of thin rays, each lit by one
- * band of the spectrum, low to high, copper to mint, swaying slowly; dust
- * drifts and twinkles in the light, and where the rays land the floor
- * glows. v is the beam's strength now (the binaural beat trades it). */
-#define PJ_RAYS 7
-#define PJ_DUST 28
-static float pj_dust[2][PJ_DUST][3]; /* position along the fan (0..1), across it (0..1), twinkle phase */
-static int pj_dust_set;
-
-static float pj_band(float u) /* the spectrum level at u (0 low .. 1 high) */
-{
-    int c = (int)(u * (PJ_COLS - 1) + 0.5f);
-    float m = 0.f;
-    for (int k = c - 2; k <= c + 2; k++)
-        if (k >= 0 && k < PJ_COLS)
-            m = fmaxf(m, pj_lev[k]);
-    return m;
-}
-
-static void pj_beam(int left, int y0, int y1, float v)
-{
-    if (v < 0.01f)
-        return;
-    float t_s = now_ms / 1000.f, lx = left ? 6.f : SCREEN_W - 6.f, ly = (float)y0;
-    float sway = 0.06f * sinf(t_s * 0.21f + (left ? 0.f : 2.1f)); /* the fan drifts a little */
-    float dir = left ? 1.f : -1.f;
-    /* the haze: the whole fan, faint, fading toward the floor */
-    for (int y = y0 + 1; y < y1; y += 2) {
-        float t = (float)(y - y0) / (y1 - y0);
-        float a0 = 0.10f + sway, a1 = 0.62f + sway; /* the fan's edges, as a share of the width per unit of fall */
-        float xa = lx + dir * a0 * (y - ly) * 1.2f, xb = lx + dir * a1 * (y - ly) * 1.2f;
-        if (!left) {
-            float tmp = xa;
-            xa = xb, xb = tmp;
-        }
-        gfx_add((int)xa, y, (int)(xb - xa), 1, pj_light(C_SAND, v * 0.55f * (1.f - 0.8f * t)));
-    }
-    /* the rays: thin lines through the haze, each with its own band */
-    for (int r = 0; r < PJ_RAYS; r++) {
-        float u = (r + 0.5f) / PJ_RAYS;
-        float lev = pj_band(u), a = 0.14f + 0.44f * u + sway + 0.015f * sinf(t_s * (0.5f + 0.13f * r) + r);
-        if (lev < 0.05f)
-            continue;
-        uint32_t col = gfx_mix(C_COPPER, C_SEA, u);
-        for (int y = y0 + 1; y < y1; y++) {
-            float t = (float)(y - y0) / (y1 - y0), x = lx + dir * a * (y - ly) * 1.2f;
-            float bri = v * lev * (1.f - 0.7f * t);
-            gfx_add((int)x - 2, y, 5, 1, pj_light(col, bri * 0.7f));
-            gfx_add((int)x, y, 1, 1, pj_light(col, bri * 1.4f));
-        }
-        /* where it lands: a small pool of light on the floor */
-        float xf = lx + dir * a * (y1 - ly) * 1.2f;
-        for (int k = 0; k < 6; k++)
-            gfx_add((int)xf - 10 + k * 2 / 3, y1 - 1 - k, 20 - k * 3, 1, pj_light(col, v * lev * 0.6f * (1.f - k / 6.f)));
-    }
-    /* dust in the light, drifting slowly and twinkling */
-    if (!pj_dust_set) {
-        pj_dust_set = 1;
-        uint32_t z = 12345;
-        for (int b = 0; b < 2; b++)
-            for (int i = 0; i < PJ_DUST; i++)
-                for (int j = 0; j < 3; j++) {
-                    z = z * 1664525u + 1013904223u;
-                    pj_dust[b][i][j] = (z >> 8) / 16777216.f;
-                }
-    }
-    for (int i = 0; i < PJ_DUST; i++) {
-        float *dd = pj_dust[left][i];
-        float along = fmodf(dd[0] + t_s * 0.012f * (0.5f + dd[2]), 1.f), across = dd[1];
-        float yy = y0 + along * (y1 - y0), a = 0.10f + 0.52f * across + sway;
-        float xx = lx + dir * a * (yy - ly) * 1.2f + 6.f * sinf(t_s * 0.3f + dd[2] * 6.28f);
-        float tw = 0.5f + 0.5f * sinf(t_s * (1.3f + dd[2]) + dd[2] * 20.f);
-        gfx_add((int)xx, (int)yy, 2, 1, pj_light(C_TEXT, v * 1.6f * tw * tw * (1.f - 0.6f * along)));
-    }
-}
-
-static void draw_projection(int y0, int y1)
-{
-    if (!pj_loaded)
-        pj_load();
-    float dt = pj_ms ? (now_ms - pj_ms) / 1000.f : 0.03f;
-    pj_ms = now_ms;
-    if (pj_mode == PJ_OFF)
-        return;
-    pj_analyse(fminf(dt, 0.2f));
-    float str = pj_mode == PJ_BRIGHT ? 0.26f : 0.14f;
-    float d = song.fx[FX_BINBEAT] ? song.fx[FX_BINDEPTH] / 100.f : 0.f;
-    int ombak = song.fx[FX_BINLOCK] == BIN_OMBAK;
-    pj_ph = fmodf(pj_ph + 3.1415927f * live.bin_hz * dt, 6.2831853f); /* half the beat: the shift each ear gets */
-    float sway = cosf(pj_ph);
-    /* the beat: two beams from the top corners, trading at the beat; with
-     * OMBAK they swell and fade together */
-    if (d > 0.f) {
-        float l = ombak ? fabsf(sway) : 0.5f + 0.5f * sway, r = ombak ? l : 1.f - l;
-        pj_beam(1, y0, y1, str * 0.9f * d * l);
-        pj_beam(0, y0, y1, str * 0.9f * d * r);
-    }
-    /* the spectrum as siding boards, each pair's tops sloping into a valley
-     * like the house's two roofs, a brighter trim along each roof edge.
-     * Drawn a row at a time, in memory order: a board's pixels at or below
-     * its sloping top form one span per row */
-    int floor_y = y1, room = y1 - y0, w = PJ_CELL - 2;
-    int top0[PJ_COLS];
-    uint32_t body[PJ_COLS], trim[PJ_COLS];
-    int ymin = floor_y;
-    for (int c = 0; c < PJ_COLS; c++) {
-        float u = (c + 0.5f) / PJ_COLS;
-        float side = ombak ? 2.f * fabsf(sway) - 1.f : sway * (1.f - 2.f * u);
-        float gain = 1.f + 0.6f * d * side, h = pj_lev[c] * room * 0.75f;
-        top0[c] = h < 3.f ? floor_y : floor_y - (int)h; /* the top at the high end of the slope */
-        uint32_t col = gfx_mix(C_COPPER, C_SEA, u);
-        body[c] = pj_light(col, 0.5f * gain * str), trim[c] = pj_light(col, 1.1f * gain * str);
-        if (top0[c] < ymin)
-            ymin = top0[c];
-    }
-    for (int y = ymin; y < floor_y; y++)
-        for (int c = 0; c < PJ_COLS; c++) {
-            int dy = y - top0[c];
-            if (dy < 0 || top0[c] >= floor_y - 2)
-                continue;
-            /* the shed roof falls 0.9 px a pixel: here it covers n pixels of
-             * the board, counted from the high end */
-            int n = (int)(dy / 0.9f) + 1, nt = (int)((dy - 2) / 0.9f) + 1; /* lit, and lit below the trim */
-            n = n > w ? w : n;
-            nt = dy < 2 ? 0 : nt > w ? w : nt;
-            int left = !(c & 1); /* left boards fall to the right: their high end is the left */
-            int x0 = c * PJ_CELL + 1;
-            if (nt > 0)
-                gfx_add(left ? x0 : x0 + w - nt, y, nt, 1, body[c]);
-            if (n > nt)
-                gfx_add(left ? x0 + nt : x0 + w - n, y, n - nt, 1, trim[c]);
-        }
-}
-
 void ui_draw(uint32_t *fb)
 {
     gfx_target(fb);
@@ -1948,7 +1696,6 @@ void ui_draw(uint32_t *fb)
     }
     if (page == PAGE_PLAY && quiet) {
         draw_quiet();
-        draw_projection(0, SCREEN_H);
         draw_toast();
         return;
     }
@@ -1960,7 +1707,6 @@ void ui_draw(uint32_t *fb)
     case PAGE_SONG: draw_song(); break;
     default: draw_mix(); break;
     }
-    draw_projection(HEADER_H, FOOTER_Y);
     draw_footer();
     draw_toast();
 }
