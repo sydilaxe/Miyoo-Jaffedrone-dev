@@ -319,8 +319,8 @@ int engine_perc_count(const Song *g)
         n += vkind(g->sp[s][SP_VOICE]) == 2;
     return n;
 }
-static const char *const perc_names[NPERC] = {"GENDER", "BONANG", "GONG", "BOWL", "HANDPAN",
-                                              "STEELPAN", "TONGUE", "CYMBAL", "DRUM"};
+static const char *const perc_names[NPERC] = {"GENDER", "BONANG", "GONG",  "BOWL",  "HANDPAN", "STEELPAN",
+                                              "TONGUE", "CYMBAL", "DRUM",  "GLASS", "CHORD",   "ALIEN"};
 const char *engine_voice_name(int v)
 {
     return v == 0 ? "STRING" : v <= NEXCITE ? excite_names[v - 1] : perc_names[v - 1 - NEXCITE];
@@ -395,9 +395,18 @@ static float rel_secs(int x) { return 0.05f * powf(400.f, x / 100.f); }
 /* LATCH bow ATTACK: 0.05 s .. 10 s (68: 1.8 s, a bow drawn slowly) */
 static float atk_secs(int x) { return 0.05f * powf(200.f, x / 100.f); }
 
+float engine_perc_ring(int voice, int d);
 void sparam_format(int s, int p, char *b, int n)
 {
     int x = song.sp[s][p];
+    if (p == SP_DECAY && engine_voice_perc(s)) { /* RING, in seconds; at the top a drone */
+        float t = engine_perc_ring(song.sp[s][SP_VOICE], x);
+        if (x >= 100)
+            snprintf(b, n, "DRONE");
+        else
+            snprintf(b, n, t < 10.f ? "%.1f s" : t < 120.f ? "%.0f s" : "%.0f m", t < 120.f ? t : t / 60.f);
+        return;
+    }
     switch (p) {
     case SP_NOTE: {
         char nm[12];
@@ -697,6 +706,7 @@ static float midi_hz(float m) { return 440.f * exp2f((m - 69.f) / 12.f); }
 /* a pluck is a short burst of noise into the loop, about one period long
  * (at most 6 ms), shaped by a raised cosine so it has no hard edges */
 #define CHIFF_MS 0.03f
+#define PERC_CEIL 0.5f /* a struck voice's output ceiling, before its level */
 static void perc_strike(String *s, float amp, float hard);
 static void string_pluck(String *s, float amp)
 {
@@ -1747,7 +1757,28 @@ static PercModel perc_models[NPERC] = {
     {12, {0}, {0}, 6.f, 0.4f, 1.5f, 4}, /* CYMBAL: filled in at start */
     {8, {1, 1.59f, 2.14f, 2.30f, 2.65f, 2.92f, 3.16f, 3.50f}, {1, .8f, .6f, .5f, .4f, .35f, .3f, .25f}, 0.6f, 1.6f, 0.f,
      0},
+    /* beyond the acoustic instruments: */
+    /* GLASS: a glass harmonica or crystal glass, a thin pure shell, made to be rubbed */
+    {5, {1, 2.32f, 4.25f, 6.63f, 9.6f}, {1, .35f, .15f, .08f, .04f}, 20.f, 0.3f, 0.4f, 2},
+    /* CHORD: a metal body whose modes are the scale's own notes stacked in thirds
+     * (set from the scale each moment), so it rings as a chord in tune with the drone */
+    {8, {1, 1.25f, 1.5f, 1.875f, 2.25f, 2.8f, 3.4f, 4.f}, {1, .6f, .55f, .45f, .4f, .3f, .25f, .2f}, 6.f, 0.5f, 0.7f, 2},
+    /* ALIEN: modes a golden ratio apart, evenly spaced in pitch yet never harmonic,
+     * shimmering slowly: no body on earth rings like this */
+    {7, {0}, {1, .7f, .55f, .4f, .3f, .2f, .14f}, 10.f, 0.4f, 0.35f, 4},
 };
+
+/* RING: how long a struck voice rings, in seconds: a sixth to five times
+ * its model's ring up to 95, and from there up to ten minutes, a metal drone
+ * that hardly fades */
+static float perc_ring(const PercModel *m, int d)
+{
+    if (d <= 95)
+        return m->t60 * powf(6.f, (d - 50) / 50.f);
+    float r95 = m->t60 * powf(6.f, 0.9f);
+    return r95 * powf(600.f / r95, (d - 95) / 5.f);
+}
+float engine_perc_ring(int voice, int d) { return perc_ring(&perc_models[voice - 1 - NEXCITE], d); }
 
 typedef struct {
     int n;
@@ -1762,6 +1793,9 @@ typedef struct {
 
 static void perc_init_models(void)
 {
+    PercModel *a = &perc_models[PC_ALIEN];
+    for (int k = 0; k < a->n; k++)
+        a->r[k] = powf(1.6180340f, (float)k);
     PercModel *c = &perc_models[PC_CYMBAL];
     for (int k = 0; k < c->n; k++) {
         c->r[k] = powf((k + 3) / 3.f, 1.5f);
@@ -1780,9 +1814,20 @@ static void perc_strike(String *s, float amp, float hard)
 /* the voice's modes for this sub-block, from its model and controls */
 static void perc_setup(PercVoice *v, String *st, const int *P, float hz, float bow_amt)
 {
-    const PercModel *m = &perc_models[st->voice_was - 1 - NEXCITE];
-    float stretch = 1.f + 0.35f * P[SP_STIFF] / 100.f; /* more: the partials pulled apart, more clangor */
-    float ring = m->t60 * powf(6.f, (P[SP_DECAY] - 50) / 50.f);
+    int model = st->voice_was - 1 - NEXCITE;
+    PercModel *m = &perc_models[model];
+    if (model == PC_CHORD) { /* the scale's notes stacked in thirds (every other degree), two octaves and more */
+        const Scale *sc = cur_scale();
+        for (int k = 0; k < m->n; k++)
+            m->r[k] = exp2f(deg_cents(sc, 2 * k) / 1200.f);
+    }
+    /* STRETCH pulls the partials apart, gently at first and far at the top:
+     * an exponent from 1 (as the body is) to 2.2, clangor no body has */
+    float sx = P[SP_STIFF] / 100.f, stretch = 1.f + 1.2f * sx * sqrtf(sx);
+    float ring = perc_ring(m, P[SP_DECAY]);
+    /* a long ring keeps its shimmer: the highs die almost as slowly as the
+     * fundamental (metal and glass; a drum skin's highs always die fast) */
+    float hf = model == PC_DRUM ? m->hf : m->hf * (1.f - 0.75f * fminf(1.f, fmaxf(0.f, (P[SP_DECAY] - 70) / 30.f)));
     float pos = P[SP_POS] / 100.f, bright = P[SP_BRIGHT] / 100.f;
     int sing = P[SP_HARM] + (st->over ? 1 : 0); /* the mode the bow favours; a touch moves it up */
     int n = 0;
@@ -1794,10 +1839,10 @@ static void perc_setup(PercVoice *v, String *st, const int *P, float hz, float b
         float f = hz * r + (k < m->n ? -half : half);
         if (f > 0.42f * sr)
             continue;
-        float t60 = ring * powf(r, -0.7f * m->hf);
+        float t60 = ring * powf(r, -0.7f * hf);
         if (st->over && i == 0) /* a finger on the fundamental's antinode: it dies, the next mode rings */
             t60 = fminf(t60, 0.05f);
-        float rad = powf(10.f, -3.f / (t60 * sr));
+        float rad = fminf(powf(10.f, -3.f / (t60 * sr)), 0.9999998f); /* never 1: rounding must not grow it */
         float w = 6.2831853f * f / sr;
         v->ar[n] = rad * cosf(w), v->ai[n] = rad * sinf(w), v->w[n] = w;
         v->phi[n] = 0.2f + 0.8f * fabsf(cosf(3.14159265f * i * pos * 0.9f)); /* where it is struck */
@@ -1806,6 +1851,22 @@ static void perc_setup(PercVoice *v, String *st, const int *P, float hz, float b
         n++;
     }
     v->n = n;
+    /* the body's own limiter: strike after strike on a long ring piles up
+     * energy; above a ceiling all the modes ease down together (within
+     * about 10 ms), so it never builds too far, and the tone stays */
+    if (st->env > PERC_CEIL) {
+        float g = powf(PERC_CEIL / st->env, 0.15f);
+        for (int k = 0; k < n; k++)
+            st->mz[k][0] *= g, st->mz[k][1] *= g;
+        st->env *= g;
+    }
+    for (int k = 0; k < n; k++) { /* and a last guard: no mode ever runs away */
+        float e = st->mz[k][0] * st->mz[k][0] + st->mz[k][1] * st->mz[k][1];
+        if (e > 400.f || !(e == e)) {
+            float g = e == e ? 20.f / sqrtf(e) : 0.f;
+            st->mz[k][0] *= g, st->mz[k][1] *= g;
+        }
+    }
     /* MALLET: the contact lasts 4 ms (felt) down to 0.3 ms (hard), a spring for a mass of 1 */
     float tau = 0.004f * powf(0.07f, bright);
     v->K = 9.8696f / (tau * tau);
@@ -1853,6 +1914,12 @@ static void perc_tick(String *st, const PercVoice *v, float inj, float *py, floa
     }
     st->bow_ud = ud;
     o *= 0.35f;
+    float a = fabsf(o);
+    if (a > PERC_CEIL) { /* the limiter, each sample: the peak held to the ceiling, the modes eased down */
+        o *= PERC_CEIL / a;
+        for (int k = 0; k < v->n; k++)
+            st->mz[k][0] *= 0.998f, st->mz[k][1] *= 0.998f;
+    }
     if (v->sizzle > 0.f) /* a rattle that follows how loud it rings */
         o *= 1.f + v->sizzle * 1.5f * fnoise() * fminf(1.f, fabsf(o) * 3.f);
     st->env = fmaxf(fabsf(o), st->env * 0.9997f);

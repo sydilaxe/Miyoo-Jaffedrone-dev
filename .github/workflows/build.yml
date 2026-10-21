@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Publish a GitHub release with this tag (e.g. v0.10.0). Leave empty to just build."
+        description: "Publish a GitHub release with this tag (e.g. v0.11.0). Leave empty to just build."
         required: false
         default: ""
 
@@ -71,6 +71,8 @@ jobs:
           grep -q "both shoulders: LATCH R1 then L1 .*(x2.00), let go .*, still droning 1; L1 then R1 x2.00; RINGS R1 then L1 .*(x2.00)" $r
           grep -q "struck checks: tune 1, drum shorter 1, bowl sings 1, cymbal sings 1, hard brighter 1, touch higher 1" $r
           grep -q "family jump: LIP -> GENDER -> STRING" $r
+          grep -q "metal drone: RING DRONE, .*(want over 70%: 1); beyond: 3/3 sound" $r
+          grep -q "struck limiter: .*(want it levelled off: 1)" $r
           grep -q "latch checks: silent 1, starts 1, drones 1, fades 1, bow swells 1, wind drones 1 and fades 1" $r
           # strings and winds side by side; a v0.5 WIND song loads as winds
           grep -q "v0.5 WIND song load 1 voices DOUBLE DOUBLE body 6 (want GLASS 6)" $r

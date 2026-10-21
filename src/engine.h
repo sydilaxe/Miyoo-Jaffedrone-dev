@@ -8,7 +8,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define JD_VERSION "0.10.0"
+#define JD_VERSION "0.11.0"
 
 #define NS 5
 #define NSP 27 /* params per string */
@@ -72,7 +72,8 @@ enum { EX_LIP, EX_REED, EX_DOUBLE, EX_FLUTE, EX_FREE, EX_RECORDER, EX_BANSURI, N
  * modes, struck by a mallet (a mass on a spring that meets the surface and
  * bounces off) or bowed (stick-slip friction). Its STIFF, POS, BUZZ, DECAY,
  * BRIGHT and HARM become STRETCH, SPOT, SIZZLE, RING, MALLET and SING. */
-enum { PC_GENDER, PC_BONANG, PC_GONG, PC_BOWL, PC_HANDPAN, PC_STEELPAN, PC_TONGUE, PC_CYMBAL, PC_DRUM, NPERC };
+enum { PC_GENDER, PC_BONANG, PC_GONG, PC_BOWL, PC_HANDPAN, PC_STEELPAN, PC_TONGUE, PC_CYMBAL, PC_DRUM,
+       PC_GLASS, PC_CHORD, PC_ALIEN, NPERC };
 #define VOICE_PERC(p) (1 + NEXCITE + (p)) /* the SP_VOICE of struck model p */
 enum { MAT_WOOD, MAT_METAL, MAT_CERAMIC, MAT_GLASS, NMATERIAL };
 /* GP_CHANCE: the chance a scheduled change happens. GP_RELATE: how many

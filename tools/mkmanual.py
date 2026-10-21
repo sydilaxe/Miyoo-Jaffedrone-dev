@@ -502,14 +502,19 @@ def build(out):
                       ("STEELPAN", "the same family, brighter"),
                       ("TONGUE", "a steel tongue drum: pure, a bar held at one end"),
                       ("CYMBAL", "a dense shimmer of modes; bowed, it screams and sings"),
-                      ("DRUM", "a membrane: a short pitched thud")], widths=(22 * mm, None)),
+                      ("DRUM", "a membrane: a short pitched thud"),
+                      ("GLASS", "a glass harmonica: pure, long, made to be bowed"),
+                      ("CHORD", "metal tuned to the scale: it rings as a chord"),
+                      ("ALIEN", "golden-ratio modes: a metal no body has")], widths=(22 * mm, None)),
                Spacer(1, 4),
-               table([("RING", "how long it rings"), ("MALLET", "soft felt to hard metal"),
-                      ("STRETCH", "pulls the modes apart: more clangor, more metal"),
+               table([("RING", "how long it rings; from 95 up a metal drone (DRONE)"),
+                      ("MALLET", "soft felt to hard metal"),
+                      ("STRETCH", "pulls the modes apart, far at the top: unearthly clangor"),
                       ("SPOT", "where it is struck and bowed: which modes speak"),
                       ("SIZZLE", "a rattle that follows the ring"), ("SING", "the mode the bow favours"),
                       ("BOW", "bow pressure: from a whisper to a scream")], widths=(22 * mm, None))),
-          Paragraph("The mode frequencies follow measurements and theory: rectangular-bar modes and the "
+          Paragraph("Each struck body has its own limiter, so strikes on a long ring never pile up. "
+                    "The mode frequencies follow measurements and theory: rectangular-bar modes and the "
                     "makers' harmonic partials for the gamelan bars (Sethares), 1 : 2 : 3 for handpan and pan, "
                     "1, 2.9, 5.7, 9.1 for the bowl (Inacio, Henrique and Antunes), a clamped bar for the "
                     "tongue drum, a thin plate's dense series for the cymbal, the Bessel-function modes of a "

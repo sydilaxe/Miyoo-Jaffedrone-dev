@@ -90,7 +90,7 @@ as a player does.
 
 ## Struck voices
 
-The VOICE row also offers nine **struck** voices: each a physical model of a vibrating body, its resonant
+The VOICE row also offers twelve **struck** voices: each a physical model of a vibrating body, its resonant
 modes struck by a mallet or bowed. **R2 + Y / X** on VOICE jumps between the families (strings, winds,
 struck); Y / X alone step one at a time.
 
@@ -113,9 +113,23 @@ struck); Y / X alone step one at a time.
 | TONGUE | a steel tongue drum | a bar clamped at one end: 1, 6.27, 17.5, so nearly pure |
 | CYMBAL | a cymbal | a thin plate's dense series, about n^1.5, as measured |
 | DRUM | a drum | an ideal membrane: 1, 1.59, 2.14, 2.30, 2.65, 2.92, 3.16, 3.50 |
+| GLASS | a glass harmonica, a crystal glass | a thin pure shell, long and made to be rubbed |
+| CHORD | no instrument: a metal body tuned to the scale | its modes are the current scale's notes stacked in thirds, so it rings as a chord in tune with the drone |
+| ALIEN | no instrument: an impossible metal | modes a golden ratio apart, evenly spaced in pitch yet never harmonic, shimmering slowly |
 
-A struck voice's controls: **RING** (how long it rings), **MALLET** (soft felt to hard), **STRETCH** (pulls the
-modes apart: more clangor), **SPOT** (where it is struck and bowed: which modes speak), **SIZZLE** (a rattle
+They are physical models, but not limited to the instruments they start from:
+
+- **RING** runs from a short thud to ten minutes. Above 95 a struck voice becomes a **metal drone** that
+  hardly fades (the display reads DRONE at the top), and at long rings the upper modes keep their shimmer
+  almost as long as the fundamental.
+- **STRETCH** pulls the partials apart, gently at first and far at the top, into clangor no body has.
+- FOLD, SPOT, SING and the bow push further still: a bowed ALIEN, a stretched CHORD struck hard, a glass
+  bowed on its third mode.
+- Each struck body has its **own limiter**: strike after strike on a long ring cannot pile up past a ceiling;
+  its peaks are held and its modes ease down together, so the tone stays.
+
+A struck voice's controls: **RING** (how long it rings, in seconds; DRONE at the top), **MALLET** (soft felt to
+hard), **STRETCH** (pulls the modes apart: more clangor), **SPOT** (where it is struck and bowed: which modes speak), **SIZZLE** (a rattle
 that follows the ring), **SING** (the mode the bow favours) and **BOW** (bow pressure). The pluck ring
 strikes and the bow ring bows; LATCH, RELEASE and ATTACK work as for strings.
 
@@ -467,5 +481,5 @@ Every push runs the **build** workflow:
   `test-output`.
 
 To publish a release with the zip attached, go to **Actions → build → Run workflow** and fill in a tag such as
-`v0.10.0`. Pushing a `v*` tag, or creating a release on the website, does the same. The release text comes from
+`v0.11.0`. Pushing a `v*` tag, or creating a release on the website, does the same. The release text comes from
 `.github/release-notes.md`.

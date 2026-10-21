@@ -1046,6 +1046,8 @@ int main(int argc, char **argv)
             engine_render(pcm, RATE / 2);
             double c = 1200 * log2(hz_yin(pcm, RATE / 10, RATE / 4) / 110.0);
             ok += fabs(c) < 25;
+            if (fabs(c) >= 25 && getenv("JD_DEBUG"))
+                printf("  off: struck model %d: %+.0f c\n", pitched[k], c);
             if (fabs(c) > fabs(worst))
                 worst = c;
         }
@@ -1099,6 +1101,54 @@ int main(int argc, char **argv)
         engine_render(pcm, RATE * 3);
         double t1 = hz_yin(pcm, RATE * 2, RATE / 4);
         engine_overblow(2, 0);
+        /* a metal drone: RING at the top, the gender still near full 20 s on */
+        solo(ENG_STRINGS, 0, 0, 0, 0);
+        for (int v = 0; v < NS; v++)
+            song.sp[v][SP_VOICE] = VOICE_PERC(PC_GENDER), song.sp[v][SP_DECAY] = 100;
+        engine_render(pcm, RATE / 2);
+        engine_pluck(2);
+        engine_render(pcm, RATE - 2048);
+        engine_render(pcm, 2048);
+        float d1 = live.meter[2];
+        for (int i = 0; i < 19; i++)
+            engine_render(pcm, RATE);
+        engine_render(pcm, 2048);
+        float d20 = live.meter[2];
+        /* the unearthly bodies: each sounds, stays finite, CHORD and ALIEN at their note */
+        int alive = 0;
+        double fc = 0, fa = 0;
+        for (int k = PC_GLASS; k <= PC_ALIEN; k++) {
+            solo(ENG_STRINGS, 0, 0, 0, 0);
+            for (int v = 0; v < NS; v++)
+                song.sp[v][SP_VOICE] = VOICE_PERC(k);
+            engine_render(pcm, RATE / 2);
+            engine_pluck(2);
+            engine_render(pcm, RATE);
+            double r = rms_of(pcm, RATE / 10, RATE / 4);
+            alive += r > 200 && r == r;
+            if (k == PC_CHORD)
+                fc = hz_yin(pcm, RATE / 10, RATE / 4);
+            if (k == PC_ALIEN)
+                fa = hz_yin(pcm, RATE / 10, RATE / 4);
+        }
+        /* the body's limiter: strike after strike on a droning bowl levels off
+         * (without it, ten minutes of ring would let forty strikes pile up) */
+        solo(ENG_STRINGS, 0, 0, 0, 0);
+        for (int v = 0; v < NS; v++)
+            song.sp[v][SP_VOICE] = VOICE_PERC(PC_BOWL), song.sp[v][SP_DECAY] = 100;
+        float early = 0, late = 0;
+        for (int i = 0; i < 40; i++) {
+            engine_pluck(2);
+            engine_render(pcm, RATE / 8);
+            if (i >= 5 && i < 10)
+                early = fmaxf(early, live.meter[2]);
+            if (i >= 30)
+                late = fmaxf(late, live.meter[2]);
+        }
+        printf("struck limiter: strikes 5-10 reach %.2f, strikes 30-40 %.2f (want it levelled off: %d)\n", early, late,
+               late < 1.25f * early);
+        printf("metal drone: RING DRONE, level after 1 s %.3f, after 20 s %.3f (want over 70%%: %d); beyond: %d/3 sound, "
+               "CHORD %.1f Hz, ALIEN %.1f Hz\n", d1, d20, d20 > 0.7f * d1, alive, fc, fa);
         printf("struck: %d/7 pitched models in tune (worst %+.0f cents); ring after 2 s drum %.3f, gong %.3f; bowed bowl %.3f -> %.3f, "
                "cymbal %.3f -> %.3f; mallet soft %.3g hard %.3g; bowl touched %.0f -> %.0f Hz\n",
                ok, worst, ring[0], ring[1], sing[0][0], sing[0][1], sing[1][0], sing[1][1], hf[0], hf[1], t0, t1);

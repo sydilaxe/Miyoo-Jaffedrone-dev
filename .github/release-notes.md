@@ -3,6 +3,12 @@ Jaffedrone test build for the Miyoo Mini Plus (OnionOS).
 **Install:** unzip `Jaffedrone-miyoo.zip` at the root of the SD card (it contains `App/Jaffedrone/`),
 then open **Apps → Jaffedrone**.
 
+**New in 0.11**
+- Metal drones: RING from 95 up rings for up to ten minutes (DRONE), keeping its shimmer.
+- Beyond the acoustic: STRETCH reaches much further, and three new bodies, GLASS, CHORD (tuned to the
+  scale) and ALIEN (golden-ratio modes).
+- Each struck body has its own limiter, so strikes on a long ring never pile up.
+
 **New in 0.10**
 - Struck voices: nine physically modelled bodies for any voice: GENDER, BONANG and GONG (gamelan, with
   ombak), BOWL, HANDPAN, STEELPAN, TONGUE, CYMBAL and DRUM. Struck by a mallet that bounces, or bowed by
