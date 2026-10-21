@@ -4,6 +4,8 @@ A five-string drone instrument for the Miyoo Mini Plus running OnionOS. It joins
 to an algorithmic progression. You can play it as an instrument, or let it run as a slowly changing drone
 for meditation.
 
+**Manual:** [docs/Jaffedrone-Manual.pdf](docs/Jaffedrone-Manual.pdf) shows each command on a drawing of the Miyoo, with the app's screens (`make manual` rebuilds it).
+
 ## The strings
 
 Each string is a Karplus-Strong loop with the Jaffe-Smith extensions:

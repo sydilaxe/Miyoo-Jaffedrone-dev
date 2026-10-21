@@ -88,4 +88,10 @@ package: miyoo $(APP)/splash.jdi
 	chmod +x build/sd/App/Jaffedrone/launch.sh build/sd/App/Jaffedrone/jaffedrone
 	cd build/sd && zip -qr ../Jaffedrone-miyoo.zip App
 
-.PHONY: miyoo package
+.PHONY: miyoo package manual
+
+# the PDF manual, with the app's own screens on a drawn Miyoo
+manual: build/jd_test tools/mkmanual.py
+	mkdir -p build/manual/shots docs
+	build/jd_test build/manual/shots > /dev/null
+	python3 tools/mkmanual.py build/manual/shots docs/Jaffedrone-Manual.pdf
