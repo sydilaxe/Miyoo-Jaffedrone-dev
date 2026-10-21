@@ -603,6 +603,7 @@ typedef struct {
     float bow_lpn;           /* rosin: the bow's slow noise */
     float bow_ud;            /* the surface's speed under the bow, last sample */
     float inj_pk;            /* the most the bridge pushed it, last sub-block */
+    float air_self;          /* AIR: how much it is being played (its own bow, breath or strikes), slowly let go */
     float ap[2][2]; /* STIFF: two dispersive allpasses in the loop */
     float fold_x1;  /* FOLD: last input, for the anti-aliased folder */
     /* WIND: the jet delay, a DC blocker, the lip resonator, breath and tongue */
@@ -647,7 +648,8 @@ static float bridge, bridge_x1, bridge_hp;
  * room's reverberation, and that sound pushes on its string, reed or body. */
 float engine_air = 0.f, engine_room = 0.f; /* 0 .. 1, off by default */
 float air_k[3] = {0.05f, 0.05f, 0.05f}; /* TUNING: string, wind, struck */
-float air_send[3] = {1.f, 1.f, 1.f};     /* TUNING: how loudly each family sends into the air */
+float air_send[3] = {1.f, 1.f, 1.f};
+float engine_vout_pk[NS]; /* PROTOTYPE: each voice's loudest sound (after its level), for the sweep */     /* TUNING: how loudly each family sends into the air */
 #define AIRN 1024                           /* up to 21 ms of travel: about 7 m */
 static float air_hist[NS][AIRN];
 static int air_w;
@@ -2260,6 +2262,10 @@ void engine_render(int16_t *out, int frames)
      * apart in depth), how long the others' sound takes to reach it and how
      * faint it has grown */
     int air_on = engine_air > 0.f || engine_room > 0.f;
+    /* what a voice sends into the air follows its playing: at once, let go
+     * over 1.5 s (a struck body over 3 s, its ring) */
+    float air_att = 1.f - expf(-1.f / (0.005f * sr)), air_rel = 1.f - expf(-1.f / (1.5f * sr)),
+          air_rel_struck = 1.f - expf(-1.f / (3.f * sr));
     int air_d[NS][NS];
     float air_g[NS][NS], room_k = engine_room * 0.5f;
     if (air_on)
@@ -2592,7 +2598,7 @@ void engine_render(int16_t *out, int frames)
                         o = f * (0.8f / sqrtf(g));
                     }
                     st->last_y = y * st->gain;
-                    br += st->last_y;
+                    br += air_on ? st->last_y * st->air_self : st->last_y; /* with AIR, only what it is played to make */
                     goto voice_out;
                 }
                 if (wv_on[s]) { /* air couples more gently than a bridge */
@@ -2604,7 +2610,7 @@ void engine_render(int16_t *out, int frames)
                         o = f * (0.8f / sqrtf(g));
                     }
                     st->last_y = y * st->gain;
-                    br += st->last_y;
+                    br += air_on ? st->last_y * st->air_self : st->last_y; /* with AIR, only what it is played to make */
                     goto voice_out;
                 }
                 /* fractional read D samples back: four-point Hermite, which
@@ -2688,7 +2694,7 @@ void engine_render(int16_t *out, int frames)
                 /* the other strings, heard through the bridge */
                 ex += couple * (bridge - st->last_y) + air_k[0] * air;
                 st->last_y = y * st->gain;
-                br += st->last_y;
+                br += air_on ? st->last_y * st->air_self : st->last_y; /* with AIR, only what it is played to make */
                 if (st->bounce_n > 0 && --st->bounce_n == 0) { /* the hammer bounces back */
                     st->burst = st->burst_len = (int)(0.00025f * sr) + 2;
                     st->burst_amp = st->bounce_amp;
@@ -2741,8 +2747,20 @@ void engine_render(int16_t *out, int frames)
                 }
                 /* GATE: the voice's sound follows its bow (breath) ring */
                 o *= st->lvl_cur * st->gain * play_g * (1.f - gate_d[s] + gate_d[s] * fmaxf(st->bow_env, st->hand_env));
-                if (air_on)
-                    air_hist[s][air_w] = o * air_send[pv_on[s] ? 2 : wv_on[s] ? 1 : 0]; /* what it sends into the air */
+                if (fabsf(o) > engine_vout_pk[s])
+                    engine_vout_pk[s] = fabsf(o);
+                if (air_on) {
+                    /* only what it is played to make goes into the air: its own
+                     * bow, breath or strikes and the ring after them, never
+                     * what it only heard, so listening voices sing along but
+                     * cannot feed one another round and round */
+                    float drive = fmaxf(st->hand_env, song.sp[s][SP_BOW] > 0 ? st->bow_env : 0.f);
+                    if (st->burst > 0 || st->hm_on || st->chiff > 0.05f || (pv_on[s] && pv[s].bow_p > 1e-3f))
+                        drive = 1.f;
+                    float rel = pv_on[s] ? air_rel_struck : air_rel;
+                    st->air_self += (drive - st->air_self) * (drive > st->air_self ? air_att : rel);
+                    air_hist[s][air_w] = o * st->air_self * air_send[pv_on[s] ? 2 : wv_on[s] ? 1 : 0];
+                }
                 float pan = song.sp[s][SP_PAN] / 50.f;
                 L += o * (1.f - pan);
                 R += o * (1.f + pan);
