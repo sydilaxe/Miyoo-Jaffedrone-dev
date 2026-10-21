@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Publish a GitHub release with this tag (e.g. v0.8.0). Leave empty to just build."
+        description: "Publish a GitHub release with this tag (e.g. v0.9.0). Leave empty to just build."
         required: false
         default: ""
 
@@ -62,6 +62,12 @@ jobs:
           awk '/^voice switch:/ { exit !($3 + 0 > 75) }' $r
           grep -q "^voice switch:" $r
           grep -q "latch release 12 s: .*: 1)" $r
+          grep -q "save compat v0.8: load=1 scale=TIRUS playmode=1 release=80 attack=68" $r
+          grep -q "latch attack: .*: 1)" $r
+          grep -q "latch harmonic: .*(x2.0" $r
+          grep -q "tap and hold: tap -> STRIKE, 60 ms into a hold -> nothing yet, the hold -> PLUCK" $r
+          grep -q "strike: .*brighter: 1)" $r
+          grep -q "wind hard attack: .*(x2.0" $r
           grep -q "latch checks: silent 1, starts 1, drones 1, fades 1, bow swells 1, wind drones 1 and fades 1" $r
           # strings and winds side by side; a v0.5 WIND song loads as winds
           grep -q "v0.5 WIND song load 1 voices DOUBLE DOUBLE body 6 (want GLASS 6)" $r

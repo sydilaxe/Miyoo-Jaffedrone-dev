@@ -8,10 +8,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define JD_VERSION "0.8.2"
+#define JD_VERSION "0.9.0"
 
 #define NS 5
-#define NSP 26 /* params per string */
+#define NSP 27 /* params per string */
 #define NGP 28 /* global params */
 #define NPROG 16 /* chords in the progression memory */
 #define NPRESET 10
@@ -27,13 +27,14 @@
  * (off: the bow plays continuously). Ring fields: on, steps, pulses, rotate. */
 enum { SP_NOTE, SP_FINE, SP_LEVEL, SP_BOW, SP_DECAY, SP_BRIGHT, SP_FOLD, SP_STIFF, SP_POS, SP_BUZZ,
        SP_PON, SP_PSTEPS, SP_PPULSES, SP_PROT, SP_BON, SP_BSTEPS, SP_BPULSES, SP_BROT, SP_RATE, SP_PAN,
-       SP_PCHANCE, SP_BCHANCE, SP_HARM, SP_GATE, SP_VOICE, SP_RELEASE };
+       SP_PCHANCE, SP_BCHANCE, SP_HARM, SP_GATE, SP_VOICE, SP_RELEASE, SP_LATK };
 /* SP_PCHANCE / SP_BCHANCE: the chance each pulse of the ring plays.
  * SP_HARM: a light touch at a node (OFF, or the 2nd .. 5th harmonic).
  * SP_GATE: how far the string's sound follows its own bow ring.
  * SP_VOICE: what the voice is: a string (0) or a wind voice (1 + its
  * exciter), so strings and winds can play side by side.
- * SP_RELEASE: in LATCH, how long the string takes to fade when let go. */
+ * SP_RELEASE: in LATCH, how long the string takes to fade when let go.
+ * SP_LATK: in LATCH, how long a bowed (or blown) string takes to swell in. */
 enum { RING_PLUCK, RING_BOW, NRING };
 #define RING_P(ring, field) (SP_PON + (ring) * 4 + (field)) /* field 0 on, 1 steps, 2 pulses, 3 rotate */
 #define NSOUND SP_PON /* sound params come first */
@@ -55,7 +56,7 @@ enum { PROG_FREE, PROG_RECORD, PROG_PLAY, NPROGMODE };
  * rings rest; each string sounds when plucked or bowed by hand and drones
  * until it is played again, then fades over its SP_RELEASE) */
 enum { PLAY_RINGS, PLAY_LATCH, NPLAYMODE };
-enum { LATCH_OFF, LATCH_PLUCK, LATCH_BOW };
+enum { LATCH_OFF, LATCH_PLUCK, LATCH_BOW, LATCH_HAMMER }; /* HAMMER: started by a tap */
 /* GP_SUB*: every voice can sound undertones: its pitch divided (an octave,
  * a twelfth or two octaves below, or both octave and twelfth), as a
  * resonance that rings (SUB RES) under the voice. */
@@ -165,6 +166,9 @@ void engine_init(int sample_rate);
 void engine_render(int16_t *out, int frames);
 void engine_set_playing(int on);
 void engine_pluck(int s);
+/* a tap: a string is struck like a hammered dulcimer (a bright hammer hit
+ * with a light bounce), a wind voice gets a hard overblown attack */
+void engine_hammer(int s);
 void engine_bow(int s, int on); /* bow by hand while held, over the rings */
 void engine_overblow(int s, int on); /* while bowing: overblow (wind) or touch a harmonic (strings) */
 /* LATCH: a pluck or bow (LATCH_PLUCK, LATCH_BOW) starts string s droning;

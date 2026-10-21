@@ -129,7 +129,10 @@ strings, and **LATCH**, where the rings rest and you play:
 - Press **L1 or R1 again** on that string and it lets go, fading over its own **RELEASE**: 0.05 s for a
   clipped stop up to 20 s for a long dying ring. Up and down set the selected string's RELEASE (it is also
   on the MIX page, in place of GATE).
-- A pluck starts at once; a bow is drawn in slowly, as it is by hand. **A** lets every string go.
+- A pluck starts at once; a bow swells in over the string's **ATTACK** (0.05 to 10 s, 1.8 s at first): **Y /
+  X** make the selected string's ATTACK shorter / longer. **A** lets every string go.
+- Hold **B** and the selected droning string sounds its next harmonic up (a wind voice overblows); let go
+  and it comes back.
 - Each column shows a board with a shed-roof top that fills while its string drones and drains as it fades,
   with the word PLUCKED, BOWED or FADING.
 
@@ -332,7 +335,8 @@ on the shoulder buttons.
 | B | fewer pulses, wrapping back to all |
 | X | rotate the pattern |
 | Y | a new simple pattern |
-| L1 | pluck the selected string by hand (WIND: tongue a note) |
+| L1 (tap) | strike the selected string like a hammered dulcimer: a bright hammer hit with a light bounce (WIND: a hard attack that overblows for a moment and settles). A tap is shorter than about a tenth of a second |
+| L1 (hold briefly) | pluck the selected string by hand (WIND: tongue a note); it sounds once the hold is clear, about 0.1 s in |
 | R1 (hold) | bow the selected string by hand: the bow is drawn slowly, swelling over about two seconds and brightening as it bites, then sings steadily while R1 is held (WIND: blow) |
 | hold L1, then R1 | bow with a harmonic touch: the next harmonic up sings (WIND: overblow, an octave up, a twelfth for REED) |
 | L2 + up / down | more / fewer steps |
@@ -431,5 +435,5 @@ Every push runs the **build** workflow:
   `test-output`.
 
 To publish a release with the zip attached, go to **Actions → build → Run workflow** and fill in a tag such as
-`v0.8.0`. Pushing a `v*` tag, or creating a release on the website, does the same. The release text comes from
+`v0.9.0`. Pushing a `v*` tag, or creating a release on the website, does the same. The release text comes from
 `.github/release-notes.md`.

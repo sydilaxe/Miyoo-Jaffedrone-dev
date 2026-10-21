@@ -3,6 +3,11 @@ Jaffedrone test build for the Miyoo Mini Plus (OnionOS).
 **Install:** unzip `Jaffedrone-miyoo.zip` at the root of the SD card (it contains `App/Jaffedrone/`),
 then open **Apps → Jaffedrone**.
 
+**New in 0.9**
+- Tap L1 to strike a string like a hammered dulcimer (a wind voice: a hard overblown attack); hold it
+  briefly to pluck.
+- LATCH: hold B for the next harmonic of a droning string; Y / X set each string's bow attack.
+
 **New in 0.8.2**
 - LATCH: a long RELEASE now dies away properly (the leveller no longer lifts a fading string back up).
 - Richer projector beams: a fan of rays lit by the spectrum, with drifting dust and a glow where they land.

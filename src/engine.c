@@ -42,7 +42,8 @@ static inline float exp_neg(float x)
     return u.f;
 }
 
-#define SONG_MAGIC 0x4a44520eu    /* JDR14: LATCH play mode, per-string RELEASE (v0.8) */
+#define SONG_MAGIC 0x4a44520fu    /* JDR15: per-string LATCH bow ATTACK (v0.9) */
+#define SONG_MAGIC_V14 0x4a44520eu /* JDR14: LATCH play mode, per-string RELEASE (v0.8) */
 #define SONG_MAGIC_V13 0x4a44520du /* JDR13: each voice a string or a wind (v0.6) */
 #define SONG_MAGIC_V12 0x4a44520cu /* JDR12: binaural beats as a table index (0.1 .. 40 Hz), journeys */
 #define SONG_MAGIC_V11 0x4a44520bu /* JDR11: drone attack/release, key lock, modes, progression memory (v0.5) */
@@ -140,6 +141,17 @@ typedef struct { /* JDR13: the song before LATCH and RELEASE */
     int prog_note[NPROG][NS], prog_fine[NPROG][NS];
     char prog_name[NPROG][24];
 } SongV13;
+typedef struct { /* JDR14: the song before the LATCH bow ATTACK */
+    uint32_t magic;
+    int on[NS];
+    int sp[NS][26];
+    int gp[28];
+    int lfo[NLFO][NLP];
+    int fx[NFX];
+    int prog_n, prog_pos;
+    int prog_note[NPROG][NS], prog_fine[NPROG][NS];
+    char prog_name[NPROG][24];
+} SongV14;
 
 #define NBEAT 33 /* binaural beat settings */
 Song song;
@@ -216,7 +228,7 @@ static const ParamDef sparams[NSP] = {
     {"PLUCK", 0, 1},    {"P STEPS", 1, 16}, {"P PULSES", 1, 16}, {"P ROTATE", 0, 15},
     {"BOW RING", 0, 1}, {"B STEPS", 1, 16}, {"B PULSES", 1, 16}, {"B ROTATE", 0, 15}, {"RATE", 0, 5},
     {"PAN", -50, 50},   {"P CHANCE", 0, 100}, {"B CHANCE", 0, 100}, {"HARM", 0, 4}, {"GATE", 0, 100},
-    {"VOICE", 0, NEXCITE}, {"RELEASE", 0, 100}};
+    {"VOICE", 0, NEXCITE}, {"RELEASE", 0, 100}, {"ATTACK", 0, 100}};
 static const ParamDef gparams[NGP] = {{"VOICING", 0, 1},   {"SCALE", 0, NSCALE - 1}, {"ROOT", 24, 72},
                                       {"CHANGES", 0, 5},   {"BPM", 40, 200},         {"DRIFT", 0, 100},
                                       {"GLIDE", 0, 7},     {"CUTOFF", 0, 100},       {"MASTER", 0, 100},
@@ -270,15 +282,15 @@ static const float glide_div16[8] = {0.f, 0.5f, 1.f, 2.f, 4.f, 8.f, 16.f, 32.f};
 static const char *const glide_names[8] = {"OFF", "1/32", "1/16", "1/8", "1/4", "1/2", "1 BAR", "2 BARS"};
 /* {note, fine, level, bow, decay, bright, fold, stiff, pos, buzz,
  *  pluck on, steps, pulses, rotate, bow ring on, steps, pulses, rotate, rate, pan,
- *  pluck chance, bow chance, harm, gate, voice, release}
+ *  pluck chance, bow chance, harm, gate, voice, release, latch bow attack}
  * Notes are JUST MAJOR degrees: root, fifth, octave, twelfth, two octaves.
  * Each string has its own sparse pluck rhythm; the top string's bow ring
  * breathes in and out, the other bows play continuously. */
-static const int def_sp[NS][NSP] = {{0, 0, 80, 35, 85, 45, 0, 0, 0, 0, 1, 4, 1, 0, 0, 4, 2, 0, 2, 0, 100, 100, 0, 0, 0, 55},
-                                    {4, -4, 65, 45, 92, 40, 0, 0, 0, 0, 1, 5, 2, 0, 0, 5, 3, 0, 2, -22, 90, 100, 0, 0, 0, 55},
-                                    {7, 3, 55, 40, 95, 55, 0, 0, 0, 0, 1, 3, 1, 1, 0, 3, 2, 0, 3, 22, 100, 100, 0, 0, 0, 55},
-                                    {11, 0, 40, 50, 90, 65, 0, 0, 0, 0, 1, 7, 2, 3, 0, 7, 3, 0, 2, -12, 70, 100, 0, 0, 0, 55},
-                                    {14, 2, 30, 55, 93, 70, 0, 0, 0, 0, 1, 6, 1, 2, 1, 5, 3, 0, 2, 12, 60, 80, 0, 0, 0, 55}};
+static const int def_sp[NS][NSP] = {{0, 0, 80, 35, 85, 45, 0, 0, 0, 0, 1, 4, 1, 0, 0, 4, 2, 0, 2, 0, 100, 100, 0, 0, 0, 55, 68},
+                                    {4, -4, 65, 45, 92, 40, 0, 0, 0, 0, 1, 5, 2, 0, 0, 5, 3, 0, 2, -22, 90, 100, 0, 0, 0, 55, 68},
+                                    {7, 3, 55, 40, 95, 55, 0, 0, 0, 0, 1, 3, 1, 1, 0, 3, 2, 0, 3, 22, 100, 100, 0, 0, 0, 55, 68},
+                                    {11, 0, 40, 50, 90, 65, 0, 0, 0, 0, 1, 7, 2, 3, 0, 7, 3, 0, 2, -12, 70, 100, 0, 0, 0, 55, 68},
+                                    {14, 2, 30, 55, 93, 70, 0, 0, 0, 0, 1, 6, 1, 2, 1, 5, 3, 0, 2, 12, 60, 80, 0, 0, 0, 55, 68}};
 static const int def_gp[NGP] = {MODE_CHORD, 1, 45, 4, 72, 30, 3, 70, 80, SYNC_OFF, 50, 50, 45, 30, 75, 1,
                                 ENG_STRINGS, EX_FLUTE, MAT_WOOD, 0, SUB_OCT, 60, 20, 45, 0, MODAL_AUTO, PROG_FREE, PLAY_RINGS};
 static const char *const engine_names[NENGINE] = {"STRINGS", "WIND"};
@@ -355,6 +367,8 @@ void engine_degree_name(int d, char *b, int n)
 
 /* LATCH RELEASE: 0.05 s .. 20 s, finer at the short end */
 static float rel_secs(int x) { return 0.05f * powf(400.f, x / 100.f); }
+/* LATCH bow ATTACK: 0.05 s .. 10 s (68: 1.8 s, a bow drawn slowly) */
+static float atk_secs(int x) { return 0.05f * powf(200.f, x / 100.f); }
 
 void sparam_format(int s, int p, char *b, int n)
 {
@@ -393,6 +407,7 @@ void sparam_format(int s, int p, char *b, int n)
     case SP_BON: snprintf(b, n, "%s", x ? "ON" : "OFF"); return;
     case SP_VOICE: snprintf(b, n, "%s", engine_voice_name(x)); return;
     case SP_RELEASE: snprintf(b, n, "%.*f s", rel_secs(x) < 10.f ? 1 : 0, rel_secs(x)); return;
+    case SP_LATK: snprintf(b, n, "%.*f s", atk_secs(x) < 10.f ? (atk_secs(x) < 0.1f ? 2 : 1) : 0, atk_secs(x)); return;
     case SP_FOLD:
     case SP_STIFF:
     case SP_POS:
@@ -538,6 +553,10 @@ typedef struct {
     float vis_ph;
     int burst, burst_len; /* pluck: samples of burst left, and its length */
     float burst_amp, burst_lp;
+    int hammer;              /* the burst is a hammer's strike, not a pluck */
+    int bounce_n;            /* samples until the hammer bounces back onto the string */
+    float bounce_amp;
+    int over_kick;           /* WIND: samples left of a hard attack's overblow */
     float ap[2][2]; /* STIFF: two dispersive allpasses in the loop */
     float fold_x1;  /* FOLD: last input, for the anti-aliased folder */
     /* WIND: the jet delay, a DC blocker, the lip resonator, breath and tongue */
@@ -660,6 +679,28 @@ static void string_pluck(String *s, float amp)
         len = (int)(0.006f * sr);
     s->burst = s->burst_len = len;
     s->burst_amp = amp;
+    s->hammer = 0, s->bounce_n = 0;
+}
+
+/* a tap. A string: a hammer like a dulcimer's falls on it, a short bright
+ * strike (about 0.35 ms of contact), and bounces back for a lighter second
+ * touch 22 ms later. A wind voice: a hard attack, the breath pushed so
+ * hard the note jumps to its overblown register for a moment and settles */
+static void string_hammer(String *s, float amp)
+{
+    if (s->voice_was > 0) {
+        s->art_t = 0.f;
+        s->art_amp = fminf(1.f, amp * 1.4f);
+        s->chiff = amp;
+        s->chiff_n = (int)(CHIFF_MS * sr);
+        s->over_kick = (int)(0.08f * sr);
+        return;
+    }
+    s->burst = s->burst_len = (int)(0.00035f * sr) + 2; /* a hard hammer: a very short contact */
+    s->burst_amp = amp;
+    s->hammer = 1;
+    s->bounce_n = (int)(0.022f * sr);
+    s->bounce_amp = amp * 0.35f;
 }
 
 void engine_pluck(int s)
@@ -668,6 +709,14 @@ void engine_pluck(int s)
         flash[s][RING_PLUCK] = 1.f; /* a pluck by hand lights the ring too */
     if (s >= 0 && s < NS && song.on[s])
         string_pluck(&str[s], 0.9f);
+}
+
+void engine_hammer(int s)
+{
+    if (s >= 0 && s < NS && song.on[s]) {
+        flash[s][RING_PLUCK] = 1.f;
+        string_hammer(&str[s], 0.95f);
+    }
 }
 
 void engine_bow(int s, int on)
@@ -685,9 +734,11 @@ int engine_latch(int s, int how)
         st->latched = LATCH_OFF;
     else {
         st->latched = how;
-        flash[s][how == LATCH_PLUCK ? RING_PLUCK : RING_BOW] = 1.f;
+        flash[s][how == LATCH_BOW ? RING_BOW : RING_PLUCK] = 1.f;
         if (how == LATCH_PLUCK && song.on[s])
             string_pluck(st, 0.9f);
+        if (how == LATCH_HAMMER && song.on[s])
+            string_hammer(st, 0.95f);
     }
     live.latch[s] = st->latched;
     return st->latched;
@@ -696,7 +747,7 @@ int engine_latch(int s, int how)
 void engine_unlatch_all(void)
 {
     for (int s = 0; s < NS; s++)
-        str[s].latched = LATCH_OFF, live.latch[s] = LATCH_OFF;
+        str[s].latched = LATCH_OFF, live.latch[s] = LATCH_OFF, str[s].over = 0;
 }
 
 void engine_overblow(int s, int on)
@@ -1612,12 +1663,13 @@ static void wind_tick(String *st, const WindVoice *v, float inj, float *py, floa
 
 /* the wind voice's settings for this sub-block (pitch dependent) and its
  * bore length */
-/* LATCH: how fast the latch opens (a pluck at once, a bow drawn slowly,
- * breath between) and closes (the string's RELEASE, to about -40 dB) */
+/* LATCH: how fast the latch opens (a pluck at once, a bow or breath over
+ * the string's ATTACK) and closes (its RELEASE, to about -40 dB) */
 static float latch_k(const String *st, const int *P, int wind)
 {
-    float t = st->latched == LATCH_PLUCK ? 0.008f
-              : st->latched == LATCH_BOW ? (wind ? 0.15f : 0.6f)
+    (void)wind;
+    float t = st->latched == LATCH_PLUCK || st->latched == LATCH_HAMMER ? 0.008f
+              : st->latched == LATCH_BOW ? atk_secs(P[SP_LATK]) / 3.f /* about full by the ATTACK time */
                                          : rel_secs(P[SP_RELEASE]) / 4.6f;
     return 1.f - expf(-1.f / (t * sr));
 }
@@ -1631,7 +1683,7 @@ static void wind_setup(WindVoice *v, String *st, const int *P, float hz, float s
     int ex = st->voice_was - 1; /* the sounding voice (a change waits for its fade) */
     v->ex = ex;
     v->reg = P[SP_HARM] + 1;
-    if (st->over) /* overblown by hand: a reed like a clarinet's jumps a twelfth, the rest an octave */
+    if (st->over || st->over_kick > 0) /* overblown by hand, or a hard attack: a reed like a clarinet's jumps a twelfth, the rest an octave */
         v->reg *= ex == EX_REED ? 3 : 2;
     v->base = P[SP_BOW] / 100.f;
     float d = P[SP_DECAY] / 100.f;
@@ -2044,6 +2096,8 @@ void engine_render(int16_t *out, int frames)
             wv_on[s] = st->voice_was > 0; /* the voice sounding now, until a change has faded */
             if (wv_on[s]) {
                 wind_setup(&wv[s], st, song.sp[s], hz, sps16, hand_rel);
+                if (st->over_kick > 0)
+                    st->over_kick -= nn;
                 wv[s].base *= m_bow;
                 if (st->D_cur <= 0.f)
                     st->D_cur = st->D;
@@ -2220,15 +2274,25 @@ void engine_render(int16_t *out, int frames)
                 ex += couple * (bridge - st->last_y);
                 st->last_y = y * st->gain;
                 br += st->last_y;
+                if (st->bounce_n > 0 && --st->bounce_n == 0) { /* the hammer bounces back */
+                    st->burst = st->burst_len = (int)(0.00025f * sr) + 2;
+                    st->burst_amp = st->bounce_amp;
+                    st->hammer = 1;
+                }
                 if (st->burst > 0) {
                     /* coloured by BRIGHT, windowed, and with less push into
                      * a string that is already loud, so the loop never
                      * clips on a pluck */
                     float ph = 1.f - (float)st->burst / st->burst_len;
-                    float win = 0.5f - 0.5f * cosf(6.2831853f * ph);
-                    st->burst_lp += (fnoise() - st->burst_lp) * pk_col[s];
+                    float soft = play_g * pk_gain[s] * (1.f - 0.6f * fminf(1.f, st->env));
                     st->burst--;
-                    ex += st->burst_lp * st->burst_amp * win * play_g * pk_gain[s] * (1.f - 0.6f * fminf(1.f, st->env));
+                    if (st->hammer) /* a hammer: a short round push, bright, with a little felt noise */
+                        ex += (2.4f * sin01(ph) + 0.9f * fnoise()) * st->burst_amp * soft; /* one cycle: no DC left in the loop */
+                    else {
+                        float win = 0.5f - 0.5f * cosf(6.2831853f * ph);
+                        st->burst_lp += (fnoise() - st->burst_lp) * pk_col[s];
+                        ex += st->burst_lp * st->burst_amp * win * soft;
+                    }
                 }
                 st->buf[st->w] = softclip(fbk + ex);
                 st->w = st->w + 1 < DL_MAX ? st->w + 1 : 0;
@@ -2594,6 +2658,7 @@ static void from_v7(Song *s, const SongV7 *o)
         memcpy(s->prog_name, o->prog_name, sizeof s->prog_name);                                                       \
     }
 FROM_V1X(from_v13, SongV13)
+FROM_V1X(from_v14, SongV14)
 
 static void from_v12(Song *s, const SongV12 *o)
 {
@@ -2735,6 +2800,7 @@ static int song_read(const char *path, Song *out)
     SongV10 o10;
     SongV12 o12;
     SongV13 o13;
+    SongV14 o14;
     SongV6 o6;
     SongV7 o7;
     SongV8 o8;
@@ -2746,6 +2812,10 @@ static int song_read(const char *path, Song *out)
         memcpy(&magic, buf, sizeof magic);
     if (magic == SONG_MAGIC && got == sizeof s)
         memcpy(&s, buf, sizeof s);
+    else if (magic == SONG_MAGIC_V14 && got == sizeof o14) {
+        memcpy(&o14, buf, sizeof o14);
+        from_v14(&s, &o14);
+    }
     else if (magic == SONG_MAGIC_V13 && got == sizeof o13) {
         memcpy(&o13, buf, sizeof o13);
         from_v13(&s, &o13);
@@ -2789,9 +2859,10 @@ static int song_read(const char *path, Song *out)
             s.lfo[l][p] = clampi(s.lfo[l][p], lparams[p].min, lparams[p].max);
     for (int p = 0; p < NFX; p++)
         s.fx[p] = clampi(s.fx[p], fparams[p].min, fparams[p].max);
-    if (magic != SONG_MAGIC && magic != SONG_MAGIC_V13 && magic != SONG_MAGIC_V12) /* the beat was in half hertz before JDR12 */
+    if (magic != SONG_MAGIC && magic != SONG_MAGIC_V14 && magic != SONG_MAGIC_V13 &&
+        magic != SONG_MAGIC_V12) /* the beat was in half hertz before JDR12 */
         s.fx[FX_BINBEAT] = beat_index(s.fx[FX_BINBEAT] * 0.5f);
-    if (magic != SONG_MAGIC && magic != SONG_MAGIC_V13 && s.gp[GP_ENGINE] == ENG_WIND) {
+    if (magic != SONG_MAGIC && magic != SONG_MAGIC_V14 && magic != SONG_MAGIC_V13 && s.gp[GP_ENGINE] == ENG_WIND) {
         /* a WIND song from before v0.6: every voice takes the exciter, and
          * the body the bore's material, as the engine used to */
         for (int i = 0; i < NS; i++)

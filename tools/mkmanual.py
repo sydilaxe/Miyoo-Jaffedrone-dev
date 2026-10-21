@@ -396,7 +396,11 @@ def build(out):
           Paragraph("The shoulder buttons play the string selected on PLAY, over whatever its rings are doing. "
                     "A wind voice is tongued and blown instead.", P),
           side(Miyoo("play_bow", {"L1": 1, "R1": 2}),
-               table([(num(1), B("L1"), "pluck the selected string (wind: tongue a note)"),
+               table([(num(1), "tap " + B("L1"),
+                       "strike the selected string like a hammered dulcimer: a bright hammer hit that bounces "
+                       "(wind: a hard attack that overblows for a moment and settles)"),
+                      ("", "hold " + B("L1") + " briefly", "pluck it (wind: tongue a note); a tap is under about a "
+                                                          "tenth of a second"),
                       (num(2), B("R1") + " held",
                        "bow it: the bow is drawn in slowly, swelling over about two seconds and brightening as "
                        "it bites, and sings while you hold (wind: blow)"),
@@ -420,24 +424,30 @@ def build(out):
                     "or bow keeps droning, with no need to hold the button, until you play it again; then it "
                     "fades over its own RELEASE.", P),
           side(Miyoo("latch", {"START": 1, "A": 5, "LEFT": 2, "RIGHT": 2, "L1": 3, "R1": 3, "UP": 4,
-                               "DOWN": 4}),
+                               "DOWN": 4, "B": 6, "X": 7, "Y": 7}),
                table([(num(1), B("START") + " + " + B("A"), "switch PLAY MODE between RINGS and LATCH (also on "
                                                              "the SONG page)"),
                       (num(2), B("◀") + " " + B("▶"), "choose a string"),
                       (num(3), B("L1") + " / " + B("R1"),
-                       "pluck / bow it on: it drones. Either again: it lets go and fades"),
+                       "pluck (a tap strikes) / bow it on: it drones. Either again: it lets go and fades"),
                       (num(4), B("▲") + " " + B("▼"), "that string's RELEASE, 0.05 s to 20 s"),
-                      (num(5), B("A"), "let every string go")], widths=(9 * mm, 26 * mm, None)),
+                      (num(5), B("A"), "let every string go"),
+                      (num(6), B("B") + " held", "the next harmonic up on the droning string (wind: overblow)"),
+                      (num(7), B("Y") + " / " + B("X"), "that string's bow ATTACK, shorter / longer, 0.05 s to "
+                                                         "10 s")], widths=(9 * mm, 26 * mm, None)),
                Spacer(1, 6),
                Paragraph("Each column shows a board with a shed-roof top. It fills while its string drones and "
-                         "drains as it fades, marked <b>PLUCKED</b>, <b>BOWED</b> or <b>FADING</b>, with the "
-                         "RELEASE beneath. A pluck starts at once; a bow is drawn in slowly. The RELEASE times "
-                         "are also on the MIX page, and LATCH is saved with songs and presets.", SMALL))]
+                         "drains as it fades, marked <b>STRUCK</b>, <b>PLUCKED</b>, <b>BOWED</b>, "
+                         "<b>HARMONIC</b> or <b>FADING</b>, with its ATTACK and RELEASE beneath. A pluck or "
+                         "strike starts at once; a bow swells in over its ATTACK. RELEASE is also on the MIX "
+                         "page; LATCH, ATTACK and RELEASE are saved with songs and presets.", SMALL))]
     s += [Spacer(1, 6), Paragraph("Try it", H2),
           Paragraph("Press " + B("START") + " + " + B("A") + ". Bow string 1 with " + B("R1") + " for a low "
                     "drone, move to string 3 and pluck it with " + B("L1") + ", then press " + B("L1") + " on "
                     "string 3 again to let it ring away. Raise string 5's RELEASE with " + B("▲") + " to ten "
-                    "seconds or more for a long dying shimmer.", P), PageBreak()]
+                    "seconds or more for a long dying shimmer. Tap " + B("L1") + " on string 4 to strike it, "
+                    "and hold " + B("B") + " to let its harmonic sing. Lower string 1's ATTACK with " + B("Y") +
+                    " for a bow that bites at once.", P), PageBreak()]
 
     # -------------------------------------------------- edit pages
     s += [Paragraph("SOUND, COMPOSE and MIX", H1),
@@ -532,10 +542,11 @@ def build(out):
                table([(B("START"), "start / stop the drone"),
                       (B("START") + " + " + B("L1") + "/" + B("R1"), "previous / next page"),
                       (B("START") + " + " + B("A"), "PLAY MODE: RINGS / LATCH"),
+                      ("LATCH " + B("B") + " / " + B("Y") + B("X"), "harmonic (held) / bow attack"),
                       (B("START") + " + " + B("Y"), "projection SOFT / BRIGHT / OFF"),
                       (B("START") + " + " + B("SELECT"), "the log: OFF / BASIC / DETAIL"),
                       (B("SELECT"), "next chord"),
-                      (B("L1"), "pluck (wind: tongue); LATCH: pluck on / let go"),
+                      (B("L1"), "tap: strike; hold: pluck (wind: hard attack / tongue); LATCH: on / let go"),
                       (B("R1"), "bow while held (wind: blow); LATCH: bow on / let go"),
                       (B("L1") + " then " + B("R1"), "harmonic (wind: overblow)"),
                       ("tap " + B("L2"), "quiet view"),

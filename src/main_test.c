@@ -1219,6 +1219,108 @@ int main(int argc, char **argv)
         printf("latch release 12 s: level 1 s after %.0f, 5 s %.0f, 9 s %.0f (want it dying away: 9 s under 3%% of 1 s: "
                "%d)\n", lv[0], lv[1], lv[2], lv[2] < 0.03 * lv[0] && lv[1] < lv[0]);
     }
+    /* LATCH: the bow ATTACK sets how fast a bowed string swells in, and B
+     * (held) sounds the next harmonic of a droning string */
+    {
+        double early[2];
+        static const int atk[2] = {20, 90}; /* about 0.15 s and 6 s */
+        for (int k = 0; k < 2; k++) {
+            song_default();
+            engine_init(RATE);
+            engine_set_playing(1);
+            song.gp[GP_PLAYMODE] = PLAY_LATCH;
+            song.gp[GP_CHANGES] = 0;
+            song.fx[FX_SCOUNT] = 0;
+            song.fx[FX_DMIX] = song.fx[FX_VSEND] = 0;
+            song.sp[2][SP_LATK] = atk[k];
+            song.gp[GP_DRIFT] = 0, song.lfo[0][LP_DEPTH] = 0;
+            for (int v = 0; v < NS; v++)
+                song.on[v] = v == 2;
+            engine_render(pcm, RATE / 2);
+            engine_latch(2, LATCH_BOW);
+            engine_render(pcm, RATE / 2);
+            early[k] = rms_of(pcm, RATE / 4, RATE / 4);
+        }
+        engine_render(pcm, RATE * 6); /* the long one, full now */
+        song.sp[2][SP_LATK] = 40;
+        engine_render(pcm, RATE * 2);
+        double f0 = hz_yin(pcm, RATE, RATE / 4);
+        engine_overblow(2, 1); /* B held */
+        engine_render(pcm, RATE * 2);
+        double f1 = hz_yin(pcm, RATE, RATE / 4);
+        engine_overblow(2, 0);
+        engine_render(pcm, RATE * 2);
+        double f2 = hz_yin(pcm, RATE, RATE / 4);
+        engine_unlatch_all();
+        printf("latch attack: 0.25 .. 0.5 s after bowing on, short attack %.0f, long attack %.0f (want short > 3x long: %d)\n",
+               early[0], early[1], early[0] > 3 * early[1]);
+        printf("latch harmonic: %.1f Hz, B held %.1f Hz (x%.2f, want x2), let go %.1f Hz\n", f0, f1, f1 / f0, f2);
+    }
+    /* L1 on PLAY: a tap (released within 110 ms) strikes, a short hold plucks;
+     * the strike is brighter than a pluck; a wind's tap overblows for a
+     * moment and settles on its note */
+    {
+        song_default();
+        engine_init(RATE);
+        engine_set_playing(1);
+        song.gp[GP_PLAYMODE] = PLAY_LATCH;
+        song.gp[GP_CHANGES] = 0;
+        int16_t buf[2 * 480];
+        ui_button(BTN_L1, 1); /* a tap on the selected string */
+        ui_tick(40);
+        ui_button(BTN_L1, 0);
+        engine_render(buf, 480);
+        int sel = -1;
+        for (int v = 0; v < NS; v++)
+            if (live.latch[v])
+                sel = v;
+        int tap_state = sel >= 0 ? live.latch[sel] : -1;
+        if (sel >= 0)
+            engine_latch(sel, LATCH_PLUCK); /* let it go */
+        ui_tick(400);
+        ui_button(BTN_L1, 1); /* a short hold */
+        ui_tick(60);
+        int early = sel >= 0 ? live.latch[sel] : -1;
+        ui_tick(80);
+        ui_button(BTN_L1, 0);
+        int hold_state = sel >= 0 ? live.latch[sel] : -1;
+        engine_unlatch_all();
+        song.gp[GP_PLAYMODE] = PLAY_RINGS;
+        /* brightness of the ringing string just after: a strike against a pluck */
+        double hf[2];
+        for (int k = 0; k < 2; k++) {
+            solo(ENG_STRINGS, 0, 0, 0, 0);
+            engine_render(pcm, RATE / 2);
+            if (k)
+                engine_hammer(2);
+            else
+                engine_pluck(2);
+            engine_render(pcm, RATE / 10);
+            double e = 0, h = 0;
+            for (int i = RATE * 3 / 100; i < RATE * 8 / 100; i++) { /* 30 .. 80 ms: the string ringing */
+                double d = pcm[2 * i] - 2.0 * pcm[2 * i - 2] + pcm[2 * i - 4];
+                e += (double)pcm[2 * i] * pcm[2 * i];
+                h += d * d;
+            }
+            hf[k] = h / (e + 1);
+        }
+        /* a flute's hard attack: an octave up for a moment, then the note */
+        solo(ENG_WIND, EX_FLUTE, MAT_WOOD, 0, 40);
+        engine_render(pcm, RATE * 2);
+        double f_before = hz_yin(pcm, RATE, RATE / 4);
+        engine_hammer(2);
+        engine_render(pcm, RATE / 10);
+        double f_kick = hz_yin(pcm, 1200, 2400);
+        engine_render(pcm, RATE);
+        double f_after = hz_yin(pcm, RATE / 2, RATE / 4);
+        printf("tap and hold: tap -> %s, 60 ms into a hold -> %s, the hold -> %s (want STRIKE, nothing yet, PLUCK)\n",
+               tap_state == LATCH_HAMMER ? "STRIKE" : tap_state == LATCH_PLUCK ? "PLUCK" : "none",
+               early == LATCH_OFF ? "nothing yet" : "already",
+               hold_state == LATCH_PLUCK ? "PLUCK" : hold_state == LATCH_HAMMER ? "STRIKE" : "none");
+        printf("strike: brightness %.3f against a pluck's %.3f (want brighter: %d)\n", hf[1], hf[0], hf[1] > hf[0]);
+        printf("wind hard attack: %.0f Hz, the kick %.0f Hz (x%.2f), then %.0f Hz\n", f_before, f_kick, f_kick / f_before,
+               f_after);
+    }
     /* a v0.6 / v0.7 song (JDR13) loads: its voices kept, RELEASE and PLAY MODE new */
     {
         struct {
@@ -1264,6 +1366,29 @@ int main(int argc, char **argv)
         double after = rms_of(pcm, 384, 240); /* 8 .. 13 ms: past the limiter's 6 ms look-ahead */
         printf("voice switch: %.0f%% of the sound still there 8 ms after the change (want over 75%%: a fade, not a "
                "cut)\n", 100.0 * after / before);
+    }
+    /* a v0.8 song (JDR14) loads: LATCH and RELEASE kept, the bow ATTACK new */
+    {
+        struct {
+            uint32_t magic;
+            int on[NS], sp[NS][26], gp[28], lfo[NLFO][NLP], fx[NFX];
+            int prog_n, prog_pos, prog_note[NPROG][NS], prog_fine[NPROG][NS];
+            char prog_name[NPROG][24];
+        } o14;
+        memset(&o14, 0, sizeof o14);
+        o14.magic = 0x4a44520eu;
+        for (int v = 0; v < NS; v++)
+            o14.on[v] = 1, o14.sp[v][SP_LEVEL] = 60, o14.sp[v][SP_PSTEPS] = o14.sp[v][SP_PPULSES] = 4,
+            o14.sp[v][SP_RELEASE] = 80;
+        o14.gp[GP_SCALE] = 16, o14.gp[GP_ROOT] = 45, o14.gp[GP_BPM] = 70, o14.gp[GP_PLAYMODE] = PLAY_LATCH;
+        char p14[512];
+        snprintf(p14, sizeof p14, "%s/v08.jds", out);
+        FILE *f = fopen(p14, "wb");
+        fwrite(&o14, sizeof o14, 1, f);
+        fclose(f);
+        int ok = song_load(p14);
+        printf("save compat v0.8: load=%d scale=%s playmode=%d release=%d attack=%d\n", ok,
+               engine_scale_name(song.gp[GP_SCALE]), song.gp[GP_PLAYMODE], song.sp[0][SP_RELEASE], song.sp[0][SP_LATK]);
     }
     /* the LATCH screen: 1 plucked, 3 bowed, 4 fading, the rest silent */
     {

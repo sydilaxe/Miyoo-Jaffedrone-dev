@@ -51,6 +51,10 @@ static int l2_used, r2_used;
 static int bowing = -1; /* the string bowed by hand (R1 held) */
 static int latch_on(void) { return song.gp[GP_PLAYMODE] == PLAY_LATCH; }
 static void set_playmode(int latch);
+static int harm_s = -1; /* LATCH: the string sounding a harmonic while B is held */
+#define TAP_MS 110 /* L1 released sooner is a tap */
+static int l1_pending, l1_s;
+static int l1_down_ms;
 static int start_used;  /* START took part in a page change */
 /* some button drivers send a quick release and press while a button is
  * held: a bow survives a gap this short, and a pluck is not repeated */
@@ -516,8 +520,26 @@ static void play_action(int b)
      * A on/off, B fewer pulses (wrapping back to all), X rotate, Y a new
      * pattern; the d-pad picks the string and the ring */
     int *P = song.sp[cur_s];
-    if (latch_on()) /* LATCH: up / down the selected string's RELEASE, A lets every string go */
+    if (latch_on()) /* LATCH: up / down RELEASE, X / Y bow ATTACK, B (held) a harmonic, A lets all go */
         switch (b) {
+        case BTN_X:
+        case BTN_Y: {
+            char atk[16];
+            P[SP_LATK] = clampi(P[SP_LATK] + (b == BTN_X ? 3 : -3), 0, 100);
+            sparam_format(cur_s, SP_LATK, atk, sizeof atk);
+            say("%d BOW ATTACK %s", cur_s + 1, atk);
+            return;
+        }
+        case BTN_B: /* while held: the next harmonic up (a wind overblows) */
+            if (harm_s != cur_s) {
+                if (harm_s >= 0)
+                    engine_overblow(harm_s, 0);
+                harm_s = cur_s;
+                engine_overblow(cur_s, 1);
+                if (!live.latch[cur_s])
+                    say("%d IS NOT DRONING: L1 OR R1 FIRST", cur_s + 1);
+            }
+            return;
         case BTN_UP:
         case BTN_DOWN: {
             char rel[16];
@@ -530,9 +552,6 @@ static void play_action(int b)
             engine_unlatch_all();
             say("ALL LET GO");
             return;
-        case BTN_B:
-        case BTN_X:
-        case BTN_Y: return;
         }
     switch (b) {
     case BTN_LEFT: cur_s = wrap(cur_s - 1, NS); break;
@@ -558,6 +577,45 @@ static void play_action(int b)
     }
 }
 
+/* LATCH: start or let go of string s, and say so */
+static void do_latch(int s, int how)
+{
+    if (!live.playing)
+        engine_set_playing(1);
+    int st = engine_latch(s, how), wnd = engine_voice_wind(s);
+    char rel[16];
+    sparam_format(s, SP_RELEASE, rel, sizeof rel);
+    if (st)
+        say("%d %s, DRONING", s + 1,
+            st == LATCH_HAMMER ? (wnd ? "BLOWN HARD" : "STRUCK")
+            : st == LATCH_PLUCK ? (wnd ? "TONGUED" : "PLUCKED")
+                                : (wnd ? "BLOWN" : "BOWED"));
+    else
+        say("%d LET GO: %s", s + 1, rel);
+    if (jdlog_level() == LOG_DETAIL)
+        jdlog("latch voice %d %s", s + 1, st == LATCH_PLUCK ? "pluck" : st == LATCH_HAMMER ? "strike" : st == LATCH_BOW ? "bow" : "let go");
+}
+
+/* L1 on PLAY: released within TAP_MS it was a tap (a hammer's strike, or a
+ * wind's hard overblown attack); held past it, a pluck (or tongued note) */
+static void fire_l1(int tap)
+{
+    int s = l1_s;
+    l1_pending = 0;
+    if (latch_on()) {
+        do_latch(s, tap ? LATCH_HAMMER : LATCH_PLUCK);
+        return;
+    }
+    if (tap)
+        engine_hammer(s);
+    else
+        engine_pluck(s);
+    hand_plucks++;
+    if (jdlog_level() == LOG_DETAIL)
+        jdlog("hand %s voice %d", tap ? (engine_voice_wind(s) ? "hard attack" : "strike")
+                                      : (engine_voice_wind(s) ? "tongue" : "pluck"), s + 1);
+}
+
 static void set_playmode(int latch)
 {
     song.gp[GP_PLAYMODE] = latch ? PLAY_LATCH : PLAY_RINGS;
@@ -578,32 +636,22 @@ static void action(int b, int repeats)
             start_used |= held[BTN_START];
             page = wrap(page + (b == BTN_R1 ? 1 : -1), PAGE_COUNT);
         }
-        else if (latch_on()) { /* LATCH: L1 plucks, R1 bows; again, it lets go */
+        else if (latch_on()) { /* LATCH: L1 plucks (a tap strikes), R1 bows; again, it lets go */
             if (repeats)
                 return;
-            if (!live.playing)
-                engine_set_playing(1);
-            int st = engine_latch(cur_s, b == BTN_L1 ? LATCH_PLUCK : LATCH_BOW), wnd = engine_voice_wind(cur_s);
-            char rel[16];
-            sparam_format(cur_s, SP_RELEASE, rel, sizeof rel);
-            if (st)
-                say("%d %s, DRONING", cur_s + 1, st == LATCH_PLUCK ? (wnd ? "TONGUED" : "PLUCKED") : (wnd ? "BLOWN" : "BOWED"));
+            if (b == BTN_R1 || live.latch[cur_s])
+                do_latch(cur_s, b == BTN_R1 ? LATCH_BOW : LATCH_PLUCK);
             else
-                say("%d LET GO: %s", cur_s + 1, rel);
-            if (jdlog_level() == LOG_DETAIL)
-                jdlog("latch voice %d %s", cur_s + 1, st == LATCH_PLUCK ? "pluck" : st == LATCH_BOW ? "bow" : "let go");
+                l1_pending = 1, l1_s = cur_s, l1_down_ms = now_ms; /* tap or hold: decided on release or at TAP_MS */
         }
         else if (b == BTN_L1) {
             if (bowing >= 0) /* already bowing: L1 overblows / touches a harmonic */
                 engine_overblow(bowing, 1);
-            else {
-                engine_pluck(cur_s);
-                hand_plucks++;
-                if (jdlog_level() == LOG_DETAIL)
-                    jdlog("hand %s voice %d", engine_voice_wind(cur_s) ? "tongue" : "pluck", cur_s + 1);
-            }
+            else if (!repeats) /* a tap strikes, a short hold plucks: decided on release or at TAP_MS */
+                l1_pending = 1, l1_s = cur_s, l1_down_ms = now_ms;
         }
         else {
+            l1_pending = 0; /* L1 then R1: the harmonic bow, not a strike */
             bowing = cur_s;
             bow_start_ms = now_ms;
             if (jdlog_level() == LOG_DETAIL)
@@ -721,6 +769,13 @@ void ui_button(int b, int down)
         quiet = !quiet;
         return;
     }
+    if (b == BTN_B && !down && harm_s >= 0) { /* LATCH: letting go of B ends the harmonic */
+        ui_lock();
+        engine_overblow(harm_s, 0);
+        ui_unlock();
+        harm_s = -1;
+        return;
+    }
     if (b == BTN_R1 && !down && bowing >= 0) {
         bow_release_ms = REPEAT_GAP_MS; /* stops in ui_tick unless R1 comes back */
         return;
@@ -733,6 +788,11 @@ void ui_button(int b, int down)
         if (!down && bowing >= 0) { /* letting go of L1: back to the plain bow */
             ui_lock();
             engine_overblow(bowing, 0);
+            ui_unlock();
+        }
+        if (!down && l1_pending) { /* let go before TAP_MS: a tap */
+            ui_lock();
+            fire_l1(1);
             ui_unlock();
         }
         if (!down)
@@ -768,6 +828,11 @@ void ui_button(int b, int down)
 void ui_tick(int ms)
 {
     now_ms += ms;
+    if (l1_pending && held[BTN_L1] && now_ms - l1_down_ms >= TAP_MS) { /* still held: a pluck */
+        ui_lock();
+        fire_l1(0);
+        ui_unlock();
+    }
     if (splash_ms > 0)
         splash_ms -= ms;
     page_ms[page] += ms;
@@ -1008,8 +1073,8 @@ static void draw_footer(void)
         h = page == PAGE_COMPOSE ? "D-PAD:MOVE Y:- X:+ B:TONGUE L1/R1:PAGE SEL:NEXT CHORD"
                                  : "D-PAD:MOVE Y:- X:+ A:MUTE B:TONGUE L1/R1:PAGE SEL:CHORD";
     if (page == PAGE_PLAY && latch_on())
-        h = cw_ ? "LATCH  L1:TONGUE R1:BLOW, AGAIN:LET GO  ^v:RELEASE A:ALL GO"
-                : "LATCH  L1:PLUCK R1:BOW, AGAIN:LET GO  ^v:RELEASE A:ALL GO";
+        h = cw_ ? "L1:TONGUE R1:BLOW B:OVERBLOW Y/X:ATTACK ^v:RELEASE A:ALL GO"
+                : "L1:PLUCK R1:BOW B:HARMONIC Y/X:ATTACK ^v:RELEASE A:ALL GO";
     else if (page == PAGE_PLAY && cw_)
         h = "A:ON/OFF B:FEWER X:ROT Y:NEW L1:TONGUE R1:BLOW L1+R1:OVERBLOW";
     else if (page == PAGE_PLAY)
@@ -1407,15 +1472,20 @@ static void draw_latch(int s, int x, int y, int w, int h, uint32_t col, int sel,
     gfx_line(x, yt + slope, x1, yt, th, edge);
     gfx_line(x1, yt, x1, yb, th, edge);
     gfx_line(x, yb, x1, yb, th, edge);
-    const char *word = st == LATCH_PLUCK ? (wnd ? "TONGUED" : "PLUCKED")
+    const char *word = st && s == harm_s ? (wnd ? "OVERBLOWN" : "HARMONIC")
+                       : st == LATCH_HAMMER ? (wnd ? "HARD" : "STRUCK")
+                       : st == LATCH_PLUCK ? (wnd ? "TONGUED" : "PLUCKED")
                        : st == LATCH_BOW ? (wnd ? "BLOWN" : "BOWED")
                        : lv > 0.02f      ? "FADING"
                                          : (wnd ? "L1 / R1" : "L1 / R1");
     gfx_text(x + w / 2 - gfx_text_w(word, FONT_SMALL) / 2, (int)(yb - h * 0.45f), word, st ? C_TEXT : C_DIM, FONT_SMALL);
-    char rel[16], lb[24];
+    char rel[16], atk[16], lb[24];
     sparam_format(s, SP_RELEASE, rel, sizeof rel);
+    sparam_format(s, SP_LATK, atk, sizeof atk);
+    snprintf(lb, sizeof lb, "ATK %s", atk);
+    gfx_text(x + w / 2 - gfx_text_w(lb, FONT_SMALL) / 2, (int)yb + 4, lb, sel ? col : C_DIM, FONT_SMALL);
     snprintf(lb, sizeof lb, "REL %s", rel);
-    gfx_text(x + w / 2 - gfx_text_w(lb, FONT_SMALL) / 2, (int)yb + 6, lb, sel ? col : C_DIM, FONT_SMALL);
+    gfx_text(x + w / 2 - gfx_text_w(lb, FONT_SMALL) / 2, (int)yb + 22, lb, sel ? col : C_DIM, FONT_SMALL);
 }
 
 static void draw_play(void)
@@ -1460,7 +1530,7 @@ static void draw_play(void)
         draw_string(x + 12, x + w - 12, sy, on ? live.meter[s] : 0.f, live.phase[s],
                     gfx_mix(col, C_TEXT, 0.6f * live.hand_env[s] + 0.4f * live.flash[s][RING_PLUCK]), on, engine_voice_wind(s));
         if (latch_on()) { /* LATCH: one board that fills while the string drones */
-            draw_latch(s, x + 14, sy + 26, w - 28, FOOTER_Y - 44 - (sy + 26), col, sel, on);
+            draw_latch(s, x + 14, sy + 26, w - 28, FOOTER_Y - 62 - (sy + 26), col, sel, on);
             continue;
         }
         float r = 38.f, cx = x + w / 2.f;
