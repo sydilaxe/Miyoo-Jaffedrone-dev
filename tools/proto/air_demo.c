@@ -14,7 +14,7 @@ static void wav(const char *path){
   fwrite(hdr,4,11,f); fwrite(out,4,pos,f); fclose(f); pos=0;}
 typedef void (*Setup)(void);
 static void run(Setup su, float air, float room, int secs, int mute0_at){
-  su(); engine_air=air; engine_room=room; engine_init(R); engine_set_playing(1);
+  su(); if(getenv("SUB")){ song.gp[GP_SUB]=atoi(getenv("SUB")); song.gp[GP_SUBRES]=70; } engine_air=air; engine_room=room; engine_init(R); engine_set_playing(1);
   engine_render(out+2*pos,R); /* settle: rendered over, then the take */
   for(int i=0;i<secs;i++){ if(i==mute0_at) song.on[0]=0; engine_render(out+2*pos,R); pos+=R; }
   gap();
