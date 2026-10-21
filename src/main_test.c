@@ -1418,7 +1418,7 @@ int main(int argc, char **argv)
                early[0], early[1], early[0] > 3 * early[1]);
         printf("latch harmonic: %.1f Hz, B held %.1f Hz (x%.2f, want x2), let go %.1f Hz\n", f0, f1, f1 / f0, f2);
     }
-    /* L1 on PLAY: a tap (released within 110 ms) strikes, a short hold plucks;
+    /* L1 on PLAY: a tap (released within 150 ms) strikes, a short hold plucks;
      * the strike is brighter than a pluck; a wind's tap overblows for a
      * moment and settles on its note */
     {
@@ -1428,8 +1428,9 @@ int main(int argc, char **argv)
         song.gp[GP_PLAYMODE] = PLAY_LATCH;
         song.gp[GP_CHANGES] = 0;
         int16_t buf[2 * 480];
-        ui_button(BTN_L1, 1); /* a tap on the selected string */
-        ui_tick(40);
+        ui_button(BTN_L1, 1); /* a tap on the selected string, 130 ms, as read every 4 ms */
+        for (int t = 0; t < 130; t += 4)
+            ui_tick(4);
         ui_button(BTN_L1, 0);
         engine_render(buf, 480);
         int sel = -1;
@@ -1443,7 +1444,7 @@ int main(int argc, char **argv)
         ui_button(BTN_L1, 1); /* a short hold */
         ui_tick(60);
         int early = sel >= 0 ? live.latch[sel] : -1;
-        ui_tick(80);
+        ui_tick(120);
         ui_button(BTN_L1, 0);
         int hold_state = sel >= 0 ? live.latch[sel] : -1;
         engine_unlatch_all();

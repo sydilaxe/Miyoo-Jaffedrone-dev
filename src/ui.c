@@ -49,7 +49,7 @@ static int latch_on(void) { return song.gp[GP_PLAYMODE] == PLAY_LATCH; }
 static void set_playmode(int latch);
 static int harm_s = -1; /* LATCH: the string sounding a harmonic while B, or L1 and R1, are held */
 static int harm_both;   /* ... started by both shoulders: it ends when either lets go */
-#define TAP_MS 110 /* L1 released sooner is a tap */
+#define TAP_MS 150 /* L1 released sooner is a tap (about what taps were when buttons were read once a frame) */
 static int l1_pending, l1_s;
 static int l1_down_ms;
 static int start_used;  /* START took part in a page change */
