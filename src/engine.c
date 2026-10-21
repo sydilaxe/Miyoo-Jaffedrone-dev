@@ -1827,6 +1827,20 @@ void engine_render(int16_t *out, int frames)
     if (dly_time_cur <= 0.f)
         dly_time_cur = dly_target;
     int latch_mode = song.gp[GP_PLAYMODE] == PLAY_LATCH;
+    /* LATCH: while a string fades over its RELEASE, or when every string
+     * has been let go, the leveller must not lift the sound back up, or a
+     * long release would never die away */
+    int agc_hold = 0;
+    if (latch_mode) {
+        int any_on = 0, fading = 0;
+        for (int s = 0; s < NS; s++) {
+            if (str[s].latched)
+                any_on = 1;
+            else if (str[s].bow_env > 0.002f)
+                fading = 1;
+        }
+        agc_hold = !any_on || fading;
+    }
     /* COUPLE: how much of the bridge each string hears */
     float couple = song.fx[FX_SYMP] / 100.f;
     couple = couple * couple * 0.012f;
@@ -2387,7 +2401,8 @@ void engine_render(int16_t *out, int frames)
             agc_ms += (0.5f * (L * L + R * R) - agc_ms) * agc_k;
             if (agc_ms > 1e-7f && play_g > 0.5f) {
                 float want = fminf(AGC_MAX, fmaxf(0.5f, AGC_TARGET / sqrtf(agc_ms)));
-                agc_g += (want - agc_g) * (want > agc_g ? agc_up : agc_down);
+                if (want < agc_g || !agc_hold) /* held: it may turn down, never lift */
+                    agc_g += (want - agc_g) * (want > agc_g ? agc_up : agc_down);
             }
             L *= agc_g;
             R *= agc_g;

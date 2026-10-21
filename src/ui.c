@@ -1661,17 +1661,80 @@ static uint32_t pj_light(uint32_t c, float v)
     return (uint32_t)((c >> 16 & 255) * v) << 16 | (uint32_t)((c >> 8 & 255) * v) << 8 | (uint32_t)((c & 255) * v);
 }
 
-/* a projector beam from a top corner, falling toward the middle of the
- * floor, drawn on every other line like light through haze */
-static void pj_beam(int left, int y0, int y1, float v, uint32_t col)
+/* the projector beams: from a lens in a top corner, a faint haze of light
+ * (on every other line) and through it a fan of thin rays, each lit by one
+ * band of the spectrum, low to high, copper to mint, swaying slowly; dust
+ * drifts and twinkles in the light, and where the rays land the floor
+ * glows. v is the beam's strength now (the binaural beat trades it). */
+#define PJ_RAYS 7
+#define PJ_DUST 28
+static float pj_dust[2][PJ_DUST][3]; /* position along the fan (0..1), across it (0..1), twinkle phase */
+static int pj_dust_set;
+
+static float pj_band(float u) /* the spectrum level at u (0 low .. 1 high) */
+{
+    int c = (int)(u * (PJ_COLS - 1) + 0.5f);
+    float m = 0.f;
+    for (int k = c - 2; k <= c + 2; k++)
+        if (k >= 0 && k < PJ_COLS)
+            m = fmaxf(m, pj_lev[k]);
+    return m;
+}
+
+static void pj_beam(int left, int y0, int y1, float v)
 {
     if (v < 0.01f)
         return;
+    float t_s = now_ms / 1000.f, lx = left ? 6.f : SCREEN_W - 6.f, ly = (float)y0;
+    float sway = 0.06f * sinf(t_s * 0.21f + (left ? 0.f : 2.1f)); /* the fan drifts a little */
+    float dir = left ? 1.f : -1.f;
+    /* the haze: the whole fan, faint, fading toward the floor */
     for (int y = y0 + 1; y < y1; y += 2) {
-        float t = (float)(y - y0) / (y1 - y0); /* 0 at the lens, 1 on the floor */
-        float near = SCREEN_W * (0.02f + 0.30f * t), far = SCREEN_W * (0.10f + 0.48f * t);
-        int xa = (int)(left ? near : SCREEN_W - far), xb = (int)(left ? far : SCREEN_W - near);
-        gfx_add(xa, y, xb - xa, 1, pj_light(col, v * (1.f - 0.75f * t)));
+        float t = (float)(y - y0) / (y1 - y0);
+        float a0 = 0.10f + sway, a1 = 0.62f + sway; /* the fan's edges, as a share of the width per unit of fall */
+        float xa = lx + dir * a0 * (y - ly) * 1.2f, xb = lx + dir * a1 * (y - ly) * 1.2f;
+        if (!left) {
+            float tmp = xa;
+            xa = xb, xb = tmp;
+        }
+        gfx_add((int)xa, y, (int)(xb - xa), 1, pj_light(C_SAND, v * 0.55f * (1.f - 0.8f * t)));
+    }
+    /* the rays: thin lines through the haze, each with its own band */
+    for (int r = 0; r < PJ_RAYS; r++) {
+        float u = (r + 0.5f) / PJ_RAYS;
+        float lev = pj_band(u), a = 0.14f + 0.44f * u + sway + 0.015f * sinf(t_s * (0.5f + 0.13f * r) + r);
+        if (lev < 0.05f)
+            continue;
+        uint32_t col = gfx_mix(C_COPPER, C_SEA, u);
+        for (int y = y0 + 1; y < y1; y++) {
+            float t = (float)(y - y0) / (y1 - y0), x = lx + dir * a * (y - ly) * 1.2f;
+            float bri = v * lev * (1.f - 0.7f * t);
+            gfx_add((int)x - 2, y, 5, 1, pj_light(col, bri * 0.7f));
+            gfx_add((int)x, y, 1, 1, pj_light(col, bri * 1.4f));
+        }
+        /* where it lands: a small pool of light on the floor */
+        float xf = lx + dir * a * (y1 - ly) * 1.2f;
+        for (int k = 0; k < 6; k++)
+            gfx_add((int)xf - 10 + k * 2 / 3, y1 - 1 - k, 20 - k * 3, 1, pj_light(col, v * lev * 0.6f * (1.f - k / 6.f)));
+    }
+    /* dust in the light, drifting slowly and twinkling */
+    if (!pj_dust_set) {
+        pj_dust_set = 1;
+        uint32_t z = 12345;
+        for (int b = 0; b < 2; b++)
+            for (int i = 0; i < PJ_DUST; i++)
+                for (int j = 0; j < 3; j++) {
+                    z = z * 1664525u + 1013904223u;
+                    pj_dust[b][i][j] = (z >> 8) / 16777216.f;
+                }
+    }
+    for (int i = 0; i < PJ_DUST; i++) {
+        float *dd = pj_dust[left][i];
+        float along = fmodf(dd[0] + t_s * 0.012f * (0.5f + dd[2]), 1.f), across = dd[1];
+        float yy = y0 + along * (y1 - y0), a = 0.10f + 0.52f * across + sway;
+        float xx = lx + dir * a * (yy - ly) * 1.2f + 6.f * sinf(t_s * 0.3f + dd[2] * 6.28f);
+        float tw = 0.5f + 0.5f * sinf(t_s * (1.3f + dd[2]) + dd[2] * 20.f);
+        gfx_add((int)xx, (int)yy, 2, 1, pj_light(C_TEXT, v * 1.6f * tw * tw * (1.f - 0.6f * along)));
     }
 }
 
@@ -1693,8 +1756,8 @@ static void draw_projection(int y0, int y1)
      * OMBAK they swell and fade together */
     if (d > 0.f) {
         float l = ombak ? fabsf(sway) : 0.5f + 0.5f * sway, r = ombak ? l : 1.f - l;
-        pj_beam(1, y0, y1, str * 0.7f * d * l, C_SAND);
-        pj_beam(0, y0, y1, str * 0.7f * d * r, C_SAND);
+        pj_beam(1, y0, y1, str * 0.9f * d * l);
+        pj_beam(0, y0, y1, str * 0.9f * d * r);
     }
     /* the spectrum as siding boards, each pair's tops sloping into a valley
      * like the house's two roofs, a brighter trim along each roof edge.

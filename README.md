@@ -290,8 +290,10 @@ screens, drawn in the house's shapes:
   to the highest on the right, copper to mint, rising and falling as the drone plays. Each pair of boards'
   tops slope into a valley like the house's two shed roofs, with a brighter trim along each roof edge.
 - **The beat as projector beams:** when binaural is on, two beams fall from the top corners, like the
-  projectors' beams through the room, and trade left and right at the beat, as the two ears hear it; a
-  journey can be watched slowing down. With OMBAK they swell and fade together.
+  projectors' beams through the room: a faint haze with a fan of thin rays, each lit by a band of the
+  spectrum (copper to mint), swaying slowly, with dust drifting in the light and a glow where the rays
+  land. They trade left and right at the beat, as the two ears hear it; a journey can be watched slowing
+  down. With OMBAK they swell and fade together.
 
 START + Y switches it between SOFT, BRIGHT and OFF.
 

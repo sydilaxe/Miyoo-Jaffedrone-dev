@@ -136,11 +136,12 @@ static void status(AudioTiming *t, double secs)
     if (t && t->late)
         put("HINT", "%u audio dropouts (crackles): raise JD_BUFFER, or fewer sympathetic strings%s", t->late,
             t->ui_ms_max > 33 ? "; the screen is slow too: START + Y turns the projection off" : "");
-    else if (t && t->ui_ms_max > 50)
-        put("HINT", "the screen took up to %u ms a frame: START + Y turns the projection off", t->ui_ms_max);
     if (s.clips)
         put("HINT", "%u samples near full scale: MASTER above 80 drives the clipper; lower it for a cleaner sound", s.clips);
-    if (lev > 27.f)
+    int idle = song.gp[GP_PLAYMODE] == PLAY_LATCH; /* LATCH with every string let go is meant to be quiet */
+    for (int v = 0; v < NS && idle; v++)
+        idle = !live.latch[v];
+    if (lev > 27.f && !idle && live.playing)
         put("HINT", "the sound is very quiet and is being lifted fully: raise LEVEL, BOW or BREATH, or TONE");
     (void)secs;
     if (t)

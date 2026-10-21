@@ -1198,6 +1198,27 @@ int main(int argc, char **argv)
                quiet < 30, pk_start > 300, held > 300, gone < held * 0.1, bow_early < bow_full * 0.5, w_held > 300,
                w_gone < w_held * 0.1);
     }
+    /* LATCH: a long RELEASE (12 s) dies away instead of being lifted back up
+     * by the leveller */
+    {
+        song_default();
+        engine_init(RATE);
+        engine_set_playing(1);
+        song.gp[GP_PLAYMODE] = PLAY_LATCH;
+        song.gp[GP_CHANGES] = 0;
+        song.fx[FX_SCOUNT] = 0;
+        song.sp[1][SP_RELEASE] = 91; /* about 12 s */
+        engine_latch(1, LATCH_BOW);
+        engine_render(pcm, RATE * 5);
+        engine_latch(1, LATCH_BOW); /* let go */
+        double lv[3];
+        for (int k = 0; k < 3; k++) { /* 1, 5 and 9 s after letting go */
+            engine_render(pcm, RATE * (k ? 4 : 1));
+            lv[k] = rms_of(pcm, RATE * (k ? 3 : 0), RATE / 2);
+        }
+        printf("latch release 12 s: level 1 s after %.0f, 5 s %.0f, 9 s %.0f (want it dying away: 9 s under 3%% of 1 s: "
+               "%d)\n", lv[0], lv[1], lv[2], lv[2] < 0.03 * lv[0] && lv[1] < lv[0]);
+    }
     /* a v0.6 / v0.7 song (JDR13) loads: its voices kept, RELEASE and PLAY MODE new */
     {
         struct {

@@ -61,6 +61,7 @@ jobs:
           # a voice change fades the old voice out rather than cutting it
           awk '/^voice switch:/ { exit !($3 + 0 > 75) }' $r
           grep -q "^voice switch:" $r
+          grep -q "latch release 12 s: .*: 1)" $r
           grep -q "latch checks: silent 1, starts 1, drones 1, fades 1, bow swells 1, wind drones 1 and fades 1" $r
           # strings and winds side by side; a v0.5 WIND song loads as winds
           grep -q "v0.5 WIND song load 1 voices DOUBLE DOUBLE body 6 (want GLASS 6)" $r

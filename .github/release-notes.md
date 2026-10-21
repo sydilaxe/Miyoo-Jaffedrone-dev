@@ -3,6 +3,10 @@ Jaffedrone test build for the Miyoo Mini Plus (OnionOS).
 **Install:** unzip `Jaffedrone-miyoo.zip` at the root of the SD card (it contains `App/Jaffedrone/`),
 then open **Apps → Jaffedrone**.
 
+**New in 0.8.2**
+- LATCH: a long RELEASE now dies away properly (the leveller no longer lifts a fading string back up).
+- Richer projector beams: a fan of rays lit by the spectrum, with drifting dust and a glow where they land.
+
 **New in 0.8.1**
 - Fixes for clicks and dropouts: the audio thread runs at real-time priority, the screen always pauses
   between frames and draws the projection a row at a time (much lighter), and changing a voice fades the
