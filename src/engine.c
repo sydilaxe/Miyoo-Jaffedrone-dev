@@ -647,6 +647,7 @@ static float bridge, bridge_x1, bridge_hp;
  * room's reverberation, and that sound pushes on its string, reed or body. */
 float engine_air = 0.f, engine_room = 0.f; /* 0 .. 1, off by default */
 float air_k[3] = {0.05f, 0.05f, 0.05f}; /* TUNING: string, wind, struck */
+float air_send[3] = {1.f, 1.f, 1.f};     /* TUNING: how loudly each family sends into the air */
 #define AIRN 1024                           /* up to 21 ms of travel: about 7 m */
 static float air_hist[NS][AIRN];
 static int air_w;
@@ -2741,7 +2742,7 @@ void engine_render(int16_t *out, int frames)
                 /* GATE: the voice's sound follows its bow (breath) ring */
                 o *= st->lvl_cur * st->gain * play_g * (1.f - gate_d[s] + gate_d[s] * fmaxf(st->bow_env, st->hand_env));
                 if (air_on)
-                    air_hist[s][air_w] = o; /* what it sends into the air */
+                    air_hist[s][air_w] = o * air_send[pv_on[s] ? 2 : wv_on[s] ? 1 : 0]; /* what it sends into the air */
                 float pan = song.sp[s][SP_PAN] / 50.f;
                 L += o * (1.f - pan);
                 R += o * (1.f + pan);
