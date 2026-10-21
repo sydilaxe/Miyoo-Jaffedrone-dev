@@ -7,6 +7,9 @@ echo performance > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
 [ -f /mnt/SDCARD/.tmp_update/script/stop_audioserver.sh ] && . /mnt/SDCARD/.tmp_update/script/stop_audioserver.sh
 
 touch /tmp/stay_awake
+# AIR TEST BUILD: the voices hear one another through the air, 0 (off) to
+# 100. Change the number and relaunch to compare.
+export JD_AIR=60
 unset LD_PRELOAD
 export LD_LIBRARY_PATH="/mnt/SDCARD/.tmp_update/lib/parasyte:/lib:/config/lib:/mnt/SDCARD/miyoo/lib:/mnt/SDCARD/.tmp_update/lib:$LD_LIBRARY_PATH"
 

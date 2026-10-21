@@ -647,7 +647,7 @@ static float bridge, bridge_x1, bridge_hp;
  * is the others' sound, later and fainter with distance (343 m/s), and the
  * room's reverberation, and that sound pushes on its string, reed or body. */
 float engine_air = 0.f, engine_room = 0.f; /* 0 .. 1, off by default */
-float air_k[3] = {0.05f, 0.05f, 0.05f}; /* TUNING: string, wind, struck */
+float air_k[3] = {1.f, 2.f, 2.f}; /* how strongly each family hears the air: string, wind, struck */
 float air_send[3] = {1.f, 1.f, 1.f};
 float engine_vout_pk[NS]; /* PROTOTYPE: each voice's loudest sound (after its level), for the sweep */     /* TUNING: how loudly each family sends into the air */
 #define AIRN 1024                           /* up to 21 ms of travel: about 7 m */

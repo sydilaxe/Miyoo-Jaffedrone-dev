@@ -146,6 +146,10 @@ int main(int argc, char **argv)
     want.callback = audio_cb;
     /* JD_AHEAD: frames made ahead of the device (0: made in its request, as
      * before 0.11.3); JD_CHUNK: the pieces they are made in */
+    /* JD_AIR (test builds, 0 .. 100): the voices hear one another through the
+     * air (see engine.c); 0 or unset is off */
+    engine_air = getenv("JD_AIR") ? atoi(getenv("JD_AIR")) / 100.f : 0.f;
+    engine_air = engine_air < 0.f ? 0.f : engine_air > 1.f ? 1.f : engine_air;
     int ahead = getenv("JD_AHEAD") ? atoi(getenv("JD_AHEAD")) : bufsz;
     int chunk = getenv("JD_CHUNK") ? atoi(getenv("JD_CHUNK")) : 256;
     int have_audio = SDL_OpenAudio(&want, NULL) == 0;
@@ -154,6 +158,8 @@ int main(int argc, char **argv)
     if (have_audio) {
         fprintf(stderr, "jaffedrone: audio %d Hz, %d frames/buffer\n", rate, bufsz);
         timing.buffer_us = (uint32_t)(1000000.0 * bufsz / rate);
+        if (engine_air > 0.f)
+            jdlog("AIR %.0f (test build): the voices hear one another", engine_air * 100.f);
         jdlog("audio %d Hz, %d frames a buffer (%.1f ms), made %s; voices %s %s %s %s %s, scale %s", rate, bufsz,
               timing.buffer_us / 1000.0, use_ahead ? "ahead by its own thread" : "in the device's request", engine_voice_name(song.sp[0][SP_VOICE]), engine_voice_name(song.sp[1][SP_VOICE]),
               engine_voice_name(song.sp[2][SP_VOICE]), engine_voice_name(song.sp[3][SP_VOICE]),
