@@ -8,7 +8,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define JD_VERSION "0.12.0"
+#define JD_VERSION "0.12.1"
 
 #define NS 5
 #define NSP 28 /* params per string */

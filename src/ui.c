@@ -211,8 +211,8 @@ static const int comp_b[7] = {GP_MOTION, GP_HOME, GP_COLOR, GP_EVOLVE, GP_RELATE
 #define COMP_X 268
 #define COMP_CW 184
 #define LFO_Y 318
-/* MIX: a strip per string (with AIR: playing or listening), master, then
- * delay, reverb, binaural and AIR */
+/* MIX: a strip per string (with AURA: playing or listening), master, then
+ * AURA, delay, reverb and binaural */
 #define MIX_FX_Y 276
 #define MIX_FXC_Y 344
 #define MIX_FXW 160
@@ -1337,9 +1337,9 @@ static void draw_mix(void)
     gfx_fill(6, BODY_Y + 214, 628, 3, C_PANEL2);
     gfx_fill(6, BODY_Y + 214, mm, 3, live.master_meter > 0.95f ? C_RED : C_SEA);
 
-    /* the panels, left to right: AIR, DELAY, REVERB, BINAURAL (c: which one,
-     * 3 being AIR) */
-    static const char *const names[4] = {"DELAY", "REVERB", "BINAURAL", "AIR"};
+    /* the panels, left to right: AURA, DELAY, REVERB, BINAURAL (c: which one,
+     * 3 being AURA) */
+    static const char *const names[4] = {"DELAY", "REVERB", "BINAURAL", "AURA"};
     static const int col_of[4] = {1, 2, 3, 0};
     for (int c = 0; c < 4; c++) {
         int k = col_of[c], x = k * MIX_FXW + 4, w = MIX_FXW - 8;

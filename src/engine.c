@@ -246,7 +246,7 @@ static const ParamDef sparams[NSP] = {
     {"PLUCK", 0, 1},    {"P STEPS", 1, 16}, {"P PULSES", 1, 16}, {"P ROTATE", 0, 15},
     {"BOW RING", 0, 1}, {"B STEPS", 1, 16}, {"B PULSES", 1, 16}, {"B ROTATE", 0, 15}, {"RATE", 0, 5},
     {"PAN", -50, 50},   {"P CHANCE", 0, 100}, {"B CHANCE", 0, 100}, {"HARM", 0, 4}, {"GATE", 0, 100},
-    {"VOICE", 0, NEXCITE + NPERC}, {"RELEASE", 0, 100}, {"ATTACK", 0, 100}, {"AIR", 0, 2}};
+    {"VOICE", 0, NEXCITE + NPERC}, {"RELEASE", 0, 100}, {"ATTACK", 0, 100}, {"AURA", 0, 2}};
 static const ParamDef gparams[NGP] = {{"VOICING", 0, 1},   {"SCALE", 0, NSCALE - 1}, {"ROOT", 24, 72},
                                       {"CHANGES", 0, 5},   {"BPM", 40, 200},         {"DRIFT", 0, 100},
                                       {"GLIDE", 0, 7},     {"CUTOFF", 0, 100},       {"MASTER", 0, 100},
@@ -667,7 +667,7 @@ static int64_t last16 = -1;  /* the last 16th the rhythms acted on */
 static float flash[NS][NRING];
 /* sympathetic coupling: every string hears the others through the bridge */
 static float bridge, bridge_x1, bridge_hp;
-/* AIR: the listening voices (LISTEN) hear the voices being
+/* AURA: the listening voices (LISTEN) hear the voices being
  * played through the air of a shared room. Each voice stands where its PAN
  * puts it across a small stage; what a listener hears is the players' sound,
  * later and fainter with distance (343 m/s), pushing on its string, reed or

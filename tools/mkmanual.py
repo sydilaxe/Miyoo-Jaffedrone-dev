@@ -476,23 +476,23 @@ def build(out):
                  [Paragraph("<b>COMPOSE</b>: the scale and root (a wheel of the scale's notes, the chord "
                             "lit), how often chords change and how: MOTION, HOME, COLOR, CHANCE, RELATE, "
                             "EVOLVE, GLIDE, tempo, Wi-Fi sync and two LFOs.", SMALL),
-                  Paragraph("<b>MIX</b>: each voice's LEVEL, PAN, GATE (RELEASE in LATCH) and AIR, the master, "
-                            "undertones (SUB), then AIR, delay, reverb and binaural.", SMALL)]],
+                  Paragraph("<b>MIX</b>: each voice's LEVEL, PAN, GATE (RELEASE in LATCH) and AURA, the master, "
+                            "undertones (SUB), then AURA, delay, reverb and binaural.", SMALL)]],
                 colWidths=(250, 250))]
     s += [PageBreak()]
 
-    s += [Paragraph("AIR: voices that listen", H1),
-          Paragraph("AIR lets some voices sound only from the others, as if they stood beside them in one "
+    s += [Paragraph("AURA: voices that listen", H1),
+          Paragraph("AURA lets some voices sound only from the others, as if they stood beside them in one "
                     "room: a gong humming along with a flute, bowls singing when a reed plays. On MIX, set "
-                    "each voice's <b>AIR</b> to <b>SEND</b> (it plays, and its sound goes into the air), "
+                    "each voice's <b>AURA</b> to <b>SEND</b> (it plays, and its sound goes into the air), "
                     "<b>LISTEN</b> (it is never bowed, blown, struck or plucked; it sounds only from what "
                     "reaches it) or <b>OFF</b> (it plays, out of the air). Then raise <b>AMOUNT</b> under "
-                    "AIR, from OFF to 100.", P),
+                    "AURA, from OFF to 100.", P),
           Paragraph("Each voice stands where its PAN puts it: the players' sound reaches a listener later and "
                     "fainter the further it stands. A listener rings where its own notes meet the players': "
                     "struck bodies with a long RING sing most. The sound only goes one way, from players to "
                     "listeners (and from one listener to the next), so it can never feed back. With every "
-                    "voice on SEND, AIR does nothing: at least one must listen. Delay, reverb and binaural "
+                    "voice on SEND, AURA does nothing: at least one must listen. Delay, reverb and binaural "
                     "come after, on everything.", P),
           PageBreak()]
 

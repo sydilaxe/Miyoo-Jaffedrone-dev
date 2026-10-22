@@ -133,24 +133,24 @@ hard), **STRETCH** (pulls the modes apart: more clangor), **SPOT** (where it is 
 that follows the ring), **SING** (the mode the bow favours) and **BOW** (bow pressure). The pluck ring
 strikes and the bow ring bows; LATCH, RELEASE and ATTACK work as for strings.
 
-## AIR: voices that listen
+## AURA: voices that listen
 
-AIR lets some voices sound only from the others, as if they stood side by side in one room: a gong humming
+AURA lets some voices sound only from the others, as if they stood side by side in one room: a gong humming
 along with a flute, bowls singing when a reed plays, a string ringing in sympathy. On the MIX page each
-voice has an **AIR** setting:
+voice has an **AURA** setting:
 
 - **SEND**: it plays, and its sound goes into the air (the default).
 - **LISTEN**: it is never bowed, blown, struck or plucked (its rhythms, the shoulders and LATCH leave it
   alone); it sounds only from what reaches it.
 - **OFF**: it plays, out of the air.
 
-**AMOUNT**, under AIR at the left of the effects, sets how strongly the listeners respond (OFF to 100).
+**AMOUNT**, under AURA at the left of the effects, sets how strongly the listeners respond (OFF to 100).
 Each voice stands where its PAN puts it, across a stage of about 3 m: a player's sound reaches a listener
 later (343 m/s) and fainter the further apart they are. A listener rings where its own modes meet the
 players' notes, so struck bodies with a long RING (bowls, gongs, glass) sing most; a wind makes a faint
 listener. The sound goes one way only: listeners hear the senders and the listeners before them (by voice
 number), never the other way, and a listener passes nothing onto the bridge, so nothing can feed back.
-With every voice on SEND, AIR does nothing. Delay, reverb and binaural come after, on everything.
+With every voice on SEND, AURA does nothing. Delay, reverb and binaural come after, on everything.
 `tools/proto/air_sweep.c` checks hundreds of random combinations for runaway; `air_requested.c` renders
 example ensembles.
 
