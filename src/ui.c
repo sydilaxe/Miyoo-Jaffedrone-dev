@@ -600,7 +600,7 @@ static void do_latch(int s, int how)
     sparam_format(s, SP_RELEASE, rel, sizeof rel);
     if (st)
         say("%d %s, DRONING", s + 1,
-            st == LATCH_HAMMER ? (wnd ? "BLOWN HARD" : prc ? "STRUCK HARD" : "STRUCK")
+            st == LATCH_HAMMER ? (wnd ? "FLUTTER TONGUED" : "MALLET DROPPED")
             : st == LATCH_PLUCK ? (wnd ? "TONGUED" : prc ? "STRUCK" : "PLUCKED")
                                 : (wnd ? "BLOWN" : "BOWED"));
     else
