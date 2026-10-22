@@ -3,6 +3,16 @@ Jaffedrone test build for the Miyoo Mini Plus (OnionOS).
 **Install:** unzip `Jaffedrone-miyoo.zip` at the root of the SD card (it contains `App/Jaffedrone/`),
 then open **Apps → Jaffedrone**.
 
+**New in 0.12**
+- **AIR**: voices that listen. On MIX, set a voice's **AIR** to **LISTEN** and it is never played: it
+  sounds only from the others' sound reaching it through the air of a shared room, as a gong hums beside
+  a flute or bowls sing when a reed plays. **SEND** voices play into the air, **OFF** voices stay out of
+  it; **AMOUNT** (under AIR, left of the effects) sets how strongly the listeners respond. Each voice
+  stands where its PAN puts it: further away is later and fainter. The sound only goes one way, players to
+  listeners, so it can never feed back. Works in RINGS and LATCH, with delay, reverb and binaural after.
+- The effects on MIX run in the order the sound passes through them: AIR, DELAY, REVERB, BINAURAL.
+- Songs save AIR (format JDR16); older songs load with AIR off and every voice on SEND.
+
 **New in 0.11.4**
 - The shoulders play the moment they are pressed: **L1** plucks, **R1** bows, **L1 + R1** a harmonic,
   and **L2** drops a dulcimer mallet on the string: a bright hit, then the mallet bounces, each rebound

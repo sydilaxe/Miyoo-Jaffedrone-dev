@@ -45,7 +45,8 @@ static inline float exp_neg(float x)
     return u.f;
 }
 
-#define SONG_MAGIC 0x4a44520fu    /* JDR15: per-string LATCH bow ATTACK (v0.9) */
+#define SONG_MAGIC 0x4a445210u    /* JDR16: AIR, and each voice playing or listening (v0.12) */
+#define SONG_MAGIC_V15 0x4a44520fu /* JDR15: per-string LATCH bow ATTACK (v0.9) */
 #define SONG_MAGIC_V14 0x4a44520eu /* JDR14: LATCH play mode, per-string RELEASE (v0.8) */
 #define SONG_MAGIC_V13 0x4a44520du /* JDR13: each voice a string or a wind (v0.6) */
 #define SONG_MAGIC_V12 0x4a44520cu /* JDR12: binaural beats as a table index (0.1 .. 40 Hz), journeys */
@@ -90,6 +91,8 @@ typedef struct {
 #define NSP_V12 24
 #define NGP_V6 10
 #define NFX_V6 12
+#define NFX_V15 17 /* effect params up to JDR15 (before AIR) */
+#define NSP_V15 27
 typedef struct {
     uint32_t magic;
     int on[NS];
@@ -104,7 +107,7 @@ typedef struct {
     int sp[NS][20];
     int gp[14];
     int lfo[NLFO][NLP];
-    int fx[NFX];
+    int fx[NFX_V15];
 } SongV7;
 typedef struct {
     uint32_t magic;
@@ -112,7 +115,7 @@ typedef struct {
     int sp[NS][NSP_V12];
     int gp[16];
     int lfo[NLFO][NLP];
-    int fx[NFX];
+    int fx[NFX_V15];
 } SongV8;
 typedef struct {
     uint32_t magic;
@@ -120,7 +123,7 @@ typedef struct {
     int sp[NS][NSP_V12];
     int gp[22];
     int lfo[NLFO][NLP];
-    int fx[NFX];
+    int fx[NFX_V15];
 } SongV10;
 typedef struct { /* JDR11 and JDR12: the song before SP_VOICE */
     uint32_t magic;
@@ -128,7 +131,7 @@ typedef struct { /* JDR11 and JDR12: the song before SP_VOICE */
     int sp[NS][NSP_V12];
     int gp[27];
     int lfo[NLFO][NLP];
-    int fx[NFX];
+    int fx[NFX_V15];
     int prog_n, prog_pos;
     int prog_note[NPROG][NS], prog_fine[NPROG][NS];
     char prog_name[NPROG][24];
@@ -139,7 +142,7 @@ typedef struct { /* JDR13: the song before LATCH and RELEASE */
     int sp[NS][25];
     int gp[27];
     int lfo[NLFO][NLP];
-    int fx[NFX];
+    int fx[NFX_V15];
     int prog_n, prog_pos;
     int prog_note[NPROG][NS], prog_fine[NPROG][NS];
     char prog_name[NPROG][24];
@@ -150,11 +153,23 @@ typedef struct { /* JDR14: the song before the LATCH bow ATTACK */
     int sp[NS][26];
     int gp[28];
     int lfo[NLFO][NLP];
-    int fx[NFX];
+    int fx[NFX_V15];
     int prog_n, prog_pos;
     int prog_note[NPROG][NS], prog_fine[NPROG][NS];
     char prog_name[NPROG][24];
 } SongV14;
+
+typedef struct { /* JDR15: the song before AIR */
+    uint32_t magic;
+    int on[NS];
+    int sp[NS][NSP_V15];
+    int gp[28];
+    int lfo[NLFO][NLP];
+    int fx[NFX_V15];
+    int prog_n, prog_pos;
+    int prog_note[NPROG][NS], prog_fine[NPROG][NS];
+    char prog_name[NPROG][24];
+} SongV15;
 
 #define NBEAT 33 /* binaural beat settings */
 Song song;
@@ -231,7 +246,7 @@ static const ParamDef sparams[NSP] = {
     {"PLUCK", 0, 1},    {"P STEPS", 1, 16}, {"P PULSES", 1, 16}, {"P ROTATE", 0, 15},
     {"BOW RING", 0, 1}, {"B STEPS", 1, 16}, {"B PULSES", 1, 16}, {"B ROTATE", 0, 15}, {"RATE", 0, 5},
     {"PAN", -50, 50},   {"P CHANCE", 0, 100}, {"B CHANCE", 0, 100}, {"HARM", 0, 4}, {"GATE", 0, 100},
-    {"VOICE", 0, NEXCITE + NPERC}, {"RELEASE", 0, 100}, {"ATTACK", 0, 100}};
+    {"VOICE", 0, NEXCITE + NPERC}, {"RELEASE", 0, 100}, {"ATTACK", 0, 100}, {"AIR", 0, 2}};
 static const ParamDef gparams[NGP] = {{"VOICING", 0, 1},   {"SCALE", 0, NSCALE - 1}, {"ROOT", 24, 72},
                                       {"CHANGES", 0, 5},   {"BPM", 40, 200},         {"DRIFT", 0, 100},
                                       {"GLIDE", 0, 7},     {"CUTOFF", 0, 100},       {"MASTER", 0, 100},
@@ -249,7 +264,7 @@ static const ParamDef fparams[NFX] = {{"TIME", 0, 7},   {"FEEDBK", 0, 95}, {"MIX
                                       {"BEAT", 0, NBEAT - 1}, {"DEPTH", 0, 100}, {"MODE", 0, NBINMODE - 1},
                                       {"COUPLE", 0, 100}, {"BODY", 0, 100}, {"TYPE", 0, NBODY - 1},
                                       {"SYMP", 0, NSYMP}, {"S TUNE", 0, NSTUNE - 1}, {"S OCT", -1, 2},
-                                      {"S LEVEL", 0, 100}, {"S RING", 0, 100}};
+                                      {"S LEVEL", 0, 100}, {"S RING", 0, 100}, {"AMOUNT", 0, 100}};
 /* rhythm step lengths in 16ths */
 static const int rate_div16[6] = {1, 2, 4, 8, 16, 32};
 static const char *const rate_names[6] = {"1/16", "1/8", "1/4", "1/2", "1 BAR", "2 BARS"};
@@ -289,11 +304,11 @@ static const char *const glide_names[8] = {"OFF", "1/32", "1/16", "1/8", "1/4", 
  * Notes are JUST MAJOR degrees: root, fifth, octave, twelfth, two octaves.
  * Each string has its own sparse pluck rhythm; the top string's bow ring
  * breathes in and out, the other bows play continuously. */
-static const int def_sp[NS][NSP] = {{0, 0, 80, 35, 85, 45, 0, 0, 0, 0, 1, 4, 1, 0, 0, 4, 2, 0, 2, 0, 100, 100, 0, 0, 0, 55, 68},
-                                    {4, -4, 65, 45, 92, 40, 0, 0, 0, 0, 1, 5, 2, 0, 0, 5, 3, 0, 2, -22, 90, 100, 0, 0, 0, 55, 68},
-                                    {7, 3, 55, 40, 95, 55, 0, 0, 0, 0, 1, 3, 1, 1, 0, 3, 2, 0, 3, 22, 100, 100, 0, 0, 0, 55, 68},
-                                    {11, 0, 40, 50, 90, 65, 0, 0, 0, 0, 1, 7, 2, 3, 0, 7, 3, 0, 2, -12, 70, 100, 0, 0, 0, 55, 68},
-                                    {14, 2, 30, 55, 93, 70, 0, 0, 0, 0, 1, 6, 1, 2, 1, 5, 3, 0, 2, 12, 60, 80, 0, 0, 0, 55, 68}};
+static const int def_sp[NS][NSP] = {{0, 0, 80, 35, 85, 45, 0, 0, 0, 0, 1, 4, 1, 0, 0, 4, 2, 0, 2, 0, 100, 100, 0, 0, 0, 55, 68, 0},
+                                    {4, -4, 65, 45, 92, 40, 0, 0, 0, 0, 1, 5, 2, 0, 0, 5, 3, 0, 2, -22, 90, 100, 0, 0, 0, 55, 68, 0},
+                                    {7, 3, 55, 40, 95, 55, 0, 0, 0, 0, 1, 3, 1, 1, 0, 3, 2, 0, 3, 22, 100, 100, 0, 0, 0, 55, 68, 0},
+                                    {11, 0, 40, 50, 90, 65, 0, 0, 0, 0, 1, 7, 2, 3, 0, 7, 3, 0, 2, -12, 70, 100, 0, 0, 0, 55, 68, 0},
+                                    {14, 2, 30, 55, 93, 70, 0, 0, 0, 0, 1, 6, 1, 2, 1, 5, 3, 0, 2, 12, 60, 80, 0, 0, 0, 55, 68, 0}};
 static const int def_gp[NGP] = {MODE_CHORD, 1, 45, 4, 72, 30, 3, 70, 80, SYNC_OFF, 50, 50, 45, 30, 75, 1,
                                 ENG_STRINGS, EX_FLUTE, MAT_WOOD, 0, SUB_OCT, 60, 20, 45, 0, MODAL_AUTO, PROG_FREE, PLAY_RINGS};
 static const char *const engine_names[NENGINE] = {"STRINGS", "WIND"};
@@ -301,7 +316,7 @@ static const char *const excite_names[NEXCITE] = {"LIP", "REED", "DOUBLE", "FLUT
 static const char *const material_names[NMATERIAL] = {"WOOD", "METAL", "CERAMIC", "GLASS"};
 static const int def_lfo[NLFO][NLP] = {{2, SH_SINE, LT_CUTOFF, 35}, {4, SH_TRI, LT_LEVEL, 0}};
 /* delay MIX and reverb SEND start at 0: the effects off until wanted, like binaural */
-static const int def_fx[NFX] = {5, 45, 0, 0, 60, 55, 0, 100, 0, 30, 35, BODY_WOOD, 7, STUNE_CHORD, 1, 45, 70};
+static const int def_fx[NFX] = {5, 45, 0, 0, 60, 55, 0, 100, 0, 30, 35, BODY_WOOD, 7, STUNE_CHORD, 1, 45, 70, 0};
 
 const ParamDef *sparam_def(int p) { return &sparams[p]; }
 /* in WIND the string controls take on their wind meanings */
@@ -445,6 +460,7 @@ void sparam_format(int s, int p, char *b, int n)
     case SP_BON: snprintf(b, n, "%s", x ? "ON" : "OFF"); return;
     case SP_VOICE: snprintf(b, n, "%s", engine_voice_name(x)); return;
     case SP_RELEASE: snprintf(b, n, "%.*f s", rel_secs(x) < 10.f ? 1 : 0, rel_secs(x)); return;
+    case SP_LISTEN: snprintf(b, n, "%s", x == AIR_LISTENS ? "LISTEN" : x == AIR_OUT ? "OFF" : "SEND"); return;
     case SP_LATK: snprintf(b, n, "%.*f s", atk_secs(x) < 10.f ? (atk_secs(x) < 0.1f ? 2 : 1) : 0, atk_secs(x)); return;
     case SP_FOLD:
     case SP_STIFF:
@@ -519,7 +535,9 @@ void lparam_format(int l, int p, char *b, int n)
 void fparam_format(int p, char *b, int n)
 {
     int x = song.fx[p];
-    if (p == FX_DTIME)
+    if (p == FX_AIR && x == 0)
+        snprintf(b, n, "OFF");
+    else if (p == FX_DTIME)
         snprintf(b, n, "%s", dly_names[x]);
     else if (p == FX_BINBEAT) {
         /* the band the beat falls in, and the well-known settings by name */
@@ -638,12 +656,37 @@ typedef struct {
 } String;
 
 static String str[NS];
+/* AIR, LISTEN: a listening voice is never played (no bow, breath, strikes or
+ * plucks); it sounds only from the others' sound reaching it through the air */
+int engine_listen;   /* one bit a voice */
+int engine_air_mode; /* AIR_LISTEN or AIR_FLOW */
+#define LISTENING(st) ((engine_listen >> (int)((st) - str)) & 1)
 static double beat_phase, sync_rate = 1.0;
 static uint32_t beat;
 static int64_t last16 = -1;  /* the last 16th the rhythms acted on */
 static float flash[NS][NRING];
 /* sympathetic coupling: every string hears the others through the bridge */
 static float bridge, bridge_x1, bridge_hp;
+/* AIR: the listening voices (LISTEN) hear the voices being
+ * played through the air of a shared room. Each voice stands where its PAN
+ * puts it across a small stage; what a listener hears is the players' sound,
+ * later and fainter with distance (343 m/s), pushing on its string, reed or
+ * body. The players are untouched, and a listener passes nothing on (into
+ * the air or onto the bridge), so the sound only flows from players to
+ * listeners and can never feed back.
+ * Two ways the sound may go, both one way only, so nothing feeds back:
+ *   LISTEN  the players are untouched; listeners hear the players and the
+ *           listeners before them (by voice number)
+ *   FLOW    every voice hears the voices before it: 1 is heard by 2-5, 2 by
+ *           3-5 ... all five interact, nothing comes back round */
+float engine_air = 0.f, engine_room = 0.f; /* 0 .. 1, off by default (room: unused) */
+float air_k[3] = {1.f, 2.f, 2.f}; /* how strongly each family hears the air: string, wind, struck */
+float air_send[3] = {1.f, 1.f, 0.3f}; /* how loudly each sends (a struck body less: it would smother a player) */
+float engine_vout_pk[NS]; /* each voice's loudest sound (after its level), for the tests and the AIR sweep */
+#define AIRN 1024                           /* up to 21 ms of travel: about 7 m */
+static float air_hist[NS][AIRN];
+static int air_w;
+static float room_prev;
 /* body: five resonant modes per channel */
 #define NMODE 5
 static float body_ic[2][NMODE][2];
@@ -717,6 +760,8 @@ static float midi_hz(float m) { return 440.f * exp2f((m - 69.f) / 12.f); }
 static void perc_strike(String *s, float amp, float hard);
 static void string_pluck(String *s, float amp)
 {
+    if (LISTENING(s))
+        return;
     if (vkind(s->voice_was) == 2) { /* struck: the mallet falls */
         perc_strike(s, amp, 1.f);
         return;
@@ -769,6 +814,8 @@ static inline int hammer_lands(String *s)
 
 static void string_hammer(String *s, float amp)
 {
+    if (LISTENING(s))
+        return;
     if (vkind(s->voice_was) == 2) { /* struck: a hard mallet, hit harder, dropped so it bounces */
         perc_strike(s, fminf(1.f, amp * 1.3f), 3.f);
         hammer_drop(s, fminf(1.f, amp * 1.3f));
@@ -808,12 +855,12 @@ void engine_hammer(int s)
 void engine_bow(int s, int on)
 {
     if (s >= 0 && s < NS)
-        str[s].hand = on;
+        str[s].hand = on && !LISTENING(&str[s]);
 }
 
 int engine_latch(int s, int how)
 {
-    if (s < 0 || s >= NS)
+    if (s < 0 || s >= NS || LISTENING(&str[s])) /* a listener is never played */
         return LATCH_OFF;
     String *st = &str[s];
     if (st->latched) /* played again: let go, it fades over its RELEASE */
@@ -879,14 +926,14 @@ static void on_step(int64_t k)
             live.step[s][r] = i;
             if (!P[RING_P(r, 0)]) {
                 if (r == RING_BOW)
-                    st->bow_open = 1;
+                    st->bow_open = !LISTENING(st);
                 continue;
             }
             /* CHANCE: each pulse plays only so often */
             if (hit && frand() * 100.f >= P[r == RING_BOW ? SP_BCHANCE : SP_PCHANCE])
                 hit = 0;
             if (r == RING_BOW)
-                st->bow_open = hit;
+                st->bow_open = hit && !LISTENING(st);
             if (!hit)
                 continue;
             flash[s][r] = 1.f;
@@ -2283,6 +2330,34 @@ void engine_render(int16_t *out, int frames)
     /* COUPLE: how much of the bridge each string hears */
     float couple = song.fx[FX_SYMP] / 100.f;
     couple = couple * couple * 0.012f;
+    /* AIR: where each voice stands (PAN across 3 m, the voices a little
+     * apart in depth), how long the others' sound takes to reach it and how
+     * faint it has grown */
+    /* from the song: AIR's amount, and which voices listen */
+    engine_air = song.fx[FX_AIR] / 100.f;
+    engine_listen = 0;
+    int air_out = 0; /* voices out of the air: neither heard nor hearing */
+    for (int a = 0; a < NS; a++) {
+        engine_listen |= (song.sp[a][SP_LISTEN] == AIR_LISTENS) << a;
+        air_out |= (song.sp[a][SP_LISTEN] == AIR_OUT) << a;
+    }
+    int air_on = engine_air > 0.f && (engine_listen || engine_air_mode == AIR_FLOW);
+    int air_d[NS][NS];
+    float air_g[NS][NS];
+    if (air_on)
+        for (int a = 0; a < NS; a++)
+            for (int b = 0; b < NS; b++) {
+                float dx = (song.sp[a][SP_PAN] - song.sp[b][SP_PAN]) / 50.f * 1.5f, dz = 0.4f + 0.25f * abs(a - b);
+                float d = sqrtf(dx * dx + dz * dz);
+                air_d[a][b] = (int)(d / 343.f * sr) + 1;
+                if (air_d[a][b] > AIRN - 1)
+                    air_d[a][b] = AIRN - 1;
+                /* who hears whom: one way only */
+                int hears = engine_air_mode == AIR_FLOW ? b < a
+                          : ((engine_listen >> a) & 1) && (!((engine_listen >> b) & 1) || b < a);
+                hears = hears && !((air_out >> a) & 1) && !((air_out >> b) & 1);
+                air_g[a][b] = hears ? engine_air * 0.4f / d : 0.f;
+            }
     /* BODY: five resonant modes. WOOD and GOURD are fixed boxes, BRONZE rings
      * inharmonically and HARMONIC on the overtones, both tuned to the root */
     float body_amt = song.fx[FX_BODY] / 100.f, bm_a1[NMODE], bm_a2[NMODE], bm_a3[NMODE], bm_g[NMODE];
@@ -2381,6 +2456,8 @@ void engine_render(int16_t *out, int frames)
         if (str[s].over) /* touched by hand: the next harmonic up */
             harm_n[s] = harm_n[s] > 0.f ? fminf(harm_n[s] + 1.f, 6.f) : 2.f;
         gate_d[s] = latch_mode ? 1.f : song.sp[s][SP_GATE] / 100.f; /* LATCH: the sound follows the latch */
+        if (song.fx[FX_AIR] > 0 && song.sp[s][SP_LISTEN] == AIR_LISTENS)
+            gate_d[s] = 0.f; /* a listener is never played: nothing of its own to gate it */
     }
     /* sympathetic strings: tune them, and set their loop */
     int nsy = song.fx[FX_SCOUNT];
@@ -2423,6 +2500,8 @@ void engine_render(int16_t *out, int frames)
             st->bow_open = st->latched != LATCH_OFF;
         else if (!P[SP_BON])
             st->bow_open = 1;
+        if (LISTENING(st)) /* never played: it only hears */
+            st->bow_open = 0, st->hand = 0, st->bow_env = st->hand_env = 0.f, st->burst = 0, st->art_t = -1.f, st->hm_on = 0;
         bow_k[s] = latch_mode ? latch_k(st, P, 0)
                               : 1.f - expf(-1.f / fmaxf(0.5f * sps16 * rate_div16[P[SP_RATE]], 0.25f * sr));
         /* tone shapers: FOLD drives the output into a wavefolder, STIFF
@@ -2581,8 +2660,17 @@ void engine_render(int16_t *out, int frames)
                 st->gain += (on_t - st->gain) * g_ramp;
                 st->D_cur += dD[s];
                 st->lvl_cur += dl[s];
+                if (air_on)
+                    air_hist[s][air_w] = 0.f; /* silent unless it sounds below */
                 if (st->gain < 1e-4f && !song.on[s])
                     continue;
+                float air = 0.f;
+                int listening = LISTENING(st);
+                if (air_on) { /* the voices it hears, as their sound reaches it */
+                    for (int j = 0; j < NS; j++)
+                        air += air_g[s][j] * air_hist[j][(air_w - air_d[s][j]) & (AIRN - 1)];
+                    air = air / (1.f + fabsf(air) * 4.f); /* the air carries only so much */
+                }
 
                 float y, o;
                 if (pv_on[s] && st->bounce_n > 0) { /* the dropped mallet lands again on the body */
@@ -2591,7 +2679,7 @@ void engine_render(int16_t *out, int frames)
                         perc_strike(st, amp, 3.f);
                 }
                 if (pv_on[s]) { /* a struck body barely hears the bridge */
-                    perc_tick(st, &pv[s], 0.2f * couple * (bridge - st->last_y), &y, &o);
+                    perc_tick(st, &pv[s], 0.2f * couple * (bridge - st->last_y) + air_k[2] * air, &y, &o);
                     if (fold_g[s] > 0.f) {
                         float g = 1.f + fold_g[s] * 5.f, xf = o * g, dx = xf - st->fold_x1, f;
                         f = fabsf(dx) > 1e-4f ? (fold_F(xf) - fold_F(st->fold_x1)) / dx : fold_f(0.5f * (xf + st->fold_x1));
@@ -2599,11 +2687,11 @@ void engine_render(int16_t *out, int frames)
                         o = f * (0.8f / sqrtf(g));
                     }
                     st->last_y = y * st->gain;
-                    br += st->last_y;
+                    br += listening ? 0.f : st->last_y; /* a listener passes nothing on */
                     goto voice_out;
                 }
                 if (wv_on[s]) { /* air couples more gently than a bridge */
-                    wind_tick(st, &wv[s], 0.3f * couple * (bridge - st->last_y), &y, &o);
+                    wind_tick(st, &wv[s], 0.3f * couple * (bridge - st->last_y) + air_k[1] * air, &y, &o);
                     if (fold_g[s] > 0.f) {
                         float g = 1.f + fold_g[s] * 5.f, xf = o * g, dx = xf - st->fold_x1, f;
                         f = fabsf(dx) > 1e-4f ? (fold_F(xf) - fold_F(st->fold_x1)) / dx : fold_f(0.5f * (xf + st->fold_x1));
@@ -2611,7 +2699,7 @@ void engine_render(int16_t *out, int frames)
                         o = f * (0.8f / sqrtf(g));
                     }
                     st->last_y = y * st->gain;
-                    br += st->last_y;
+                    br += listening ? 0.f : st->last_y; /* a listener passes nothing on */
                     goto voice_out;
                 }
                 /* fractional read D samples back: four-point Hermite, which
@@ -2693,9 +2781,9 @@ void engine_render(int16_t *out, int frames)
                 st->bow_lp += (fnoise() - st->bow_lp) * bow_col[s] * (0.35f + 0.65f * open);
                 float ex = st->bow_lp * play_g * (bow_amp[s] * m_bow * open * (headroom + (hr - headroom) * h) + 0.09f * h * hr);
                 /* the other strings, heard through the bridge */
-                ex += couple * (bridge - st->last_y);
+                ex += couple * (bridge - st->last_y) + air_k[0] * air;
                 st->last_y = y * st->gain;
-                br += st->last_y;
+                br += listening ? 0.f : st->last_y; /* a listener passes nothing on */
                 if (st->bounce_n > 0) { /* the dropped hammer lands again */
                     float amp = st->bounce_amp;
                     if (hammer_lands(st)) {
@@ -2751,6 +2839,10 @@ void engine_render(int16_t *out, int frames)
                 }
                 /* GATE: the voice's sound follows its bow (breath) ring */
                 o *= st->lvl_cur * st->gain * play_g * (1.f - gate_d[s] + gate_d[s] * fmaxf(st->bow_env, st->hand_env));
+                if (fabsf(o) > engine_vout_pk[s])
+                    engine_vout_pk[s] = fabsf(o);
+                if (air_on) /* its sound goes into the air (who hears it: see air_g) */
+                    air_hist[s][air_w] = o * air_send[pv_on[s] ? 2 : wv_on[s] ? 1 : 0];
                 float pan = song.sp[s][SP_PAN] / 50.f;
                 L += o * (1.f - pan);
                 R += o * (1.f + pan);
@@ -2881,6 +2973,8 @@ void engine_render(int16_t *out, int frames)
                 fdn_mod -= 6.2831853f;
             /* the reverb hears the sound after TONE, so a dark tone has dark echoes */
             reverb_tick((post + (dl0 + dr0) * 0.5f * dly_mix) * vsend * VERB_IN * 1.4f, &wl, &wr, fdn_g, fdn_damp, fdn_mv);
+            room_prev = 0.5f * (wl + wr);
+            air_w = (air_w + 1) & (AIRN - 1);
             L += wl;
             R += wr;
 
@@ -3007,6 +3101,9 @@ void engine_init(int sample_rate)
     f_ic1[0] = f_ic1[1] = f_ic2[0] = f_ic2[1] = 0.f;
     memset(flash, 0, sizeof flash);
     master_g = play_g = 0.f;
+    memset(air_hist, 0, sizeof air_hist);
+    air_w = 0;
+    room_prev = 0.f;
     perc_gen++;
     fdn_mod = 0.f;
     fdn_w = la_w = 0;
@@ -3084,7 +3181,7 @@ static void from_v7(Song *s, const SongV7 *o)
             memcpy(s->sp[i], o->sp[i], sizeof o->sp[i]);                                                               \
         memcpy(s->gp, o->gp, sizeof o->gp);                                                                            \
         memcpy(s->lfo, o->lfo, sizeof s->lfo);                                                                         \
-        memcpy(s->fx, o->fx, sizeof s->fx);                                                                            \
+        memcpy(s->fx, o->fx, sizeof o->fx);                                                                            \
         s->prog_n = o->prog_n, s->prog_pos = o->prog_pos;                                                              \
         memcpy(s->prog_note, o->prog_note, sizeof s->prog_note);                                                       \
         memcpy(s->prog_fine, o->prog_fine, sizeof s->prog_fine);                                                       \
@@ -3092,6 +3189,7 @@ static void from_v7(Song *s, const SongV7 *o)
     }
 FROM_V1X(from_v13, SongV13)
 FROM_V1X(from_v14, SongV14)
+FROM_V1X(from_v15, SongV15)
 
 static void from_v12(Song *s, const SongV12 *o)
 {
@@ -3101,7 +3199,7 @@ static void from_v12(Song *s, const SongV12 *o)
         memcpy(s->sp[i], o->sp[i], sizeof o->sp[i]);
     memcpy(s->gp, o->gp, sizeof o->gp);
     memcpy(s->lfo, o->lfo, sizeof s->lfo);
-    memcpy(s->fx, o->fx, sizeof s->fx);
+    memcpy(s->fx, o->fx, sizeof o->fx);
     s->prog_n = o->prog_n, s->prog_pos = o->prog_pos;
     memcpy(s->prog_note, o->prog_note, sizeof s->prog_note);
     memcpy(s->prog_fine, o->prog_fine, sizeof s->prog_fine);
@@ -3116,7 +3214,7 @@ static void from_v10(Song *s, const SongV10 *o)
         memcpy(s->sp[i], o->sp[i], sizeof o->sp[i]);
     memcpy(s->gp, o->gp, sizeof o->gp);
     memcpy(s->lfo, o->lfo, sizeof s->lfo);
-    memcpy(s->fx, o->fx, sizeof s->fx);
+    memcpy(s->fx, o->fx, sizeof o->fx);
 }
 
 static void from_v8(Song *s, const SongV8 *o)
@@ -3127,7 +3225,7 @@ static void from_v8(Song *s, const SongV8 *o)
         memcpy(s->sp[i], o->sp[i], sizeof o->sp[i]);
     memcpy(s->gp, o->gp, sizeof o->gp);
     memcpy(s->lfo, o->lfo, sizeof s->lfo);
-    memcpy(s->fx, o->fx, sizeof s->fx);
+    memcpy(s->fx, o->fx, sizeof o->fx);
 }
 
 static void legacy_quiet(Song *s)
@@ -3234,6 +3332,7 @@ static int song_read(const char *path, Song *out)
     SongV12 o12;
     SongV13 o13;
     SongV14 o14;
+    SongV15 o15;
     SongV6 o6;
     SongV7 o7;
     SongV8 o8;
@@ -3245,6 +3344,10 @@ static int song_read(const char *path, Song *out)
         memcpy(&magic, buf, sizeof magic);
     if (magic == SONG_MAGIC && got == sizeof s)
         memcpy(&s, buf, sizeof s);
+    else if (magic == SONG_MAGIC_V15 && got == sizeof o15) {
+        memcpy(&o15, buf, sizeof o15);
+        from_v15(&s, &o15);
+    }
     else if (magic == SONG_MAGIC_V14 && got == sizeof o14) {
         memcpy(&o14, buf, sizeof o14);
         from_v14(&s, &o14);
@@ -3292,10 +3395,10 @@ static int song_read(const char *path, Song *out)
             s.lfo[l][p] = clampi(s.lfo[l][p], lparams[p].min, lparams[p].max);
     for (int p = 0; p < NFX; p++)
         s.fx[p] = clampi(s.fx[p], fparams[p].min, fparams[p].max);
-    if (magic != SONG_MAGIC && magic != SONG_MAGIC_V14 && magic != SONG_MAGIC_V13 &&
+    if (magic != SONG_MAGIC && magic != SONG_MAGIC_V15 && magic != SONG_MAGIC_V14 && magic != SONG_MAGIC_V13 &&
         magic != SONG_MAGIC_V12) /* the beat was in half hertz before JDR12 */
         s.fx[FX_BINBEAT] = beat_index(s.fx[FX_BINBEAT] * 0.5f);
-    if (magic != SONG_MAGIC && magic != SONG_MAGIC_V14 && magic != SONG_MAGIC_V13 && s.gp[GP_ENGINE] == ENG_WIND) {
+    if (magic != SONG_MAGIC && magic != SONG_MAGIC_V15 && magic != SONG_MAGIC_V14 && magic != SONG_MAGIC_V13 && s.gp[GP_ENGINE] == ENG_WIND) {
         /* a WIND song from before v0.6: every voice takes the exciter, and
          * the body the bore's material, as the engine used to */
         for (int i = 0; i < NS; i++)
