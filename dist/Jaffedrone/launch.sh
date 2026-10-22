@@ -7,6 +7,9 @@ echo performance > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
 [ -f /mnt/SDCARD/.tmp_update/script/stop_audioserver.sh ] && . /mnt/SDCARD/.tmp_update/script/stop_audioserver.sh
 
 touch /tmp/stay_awake
+# TEST BUILD: half-size audio buffers, for half the delay from a press to the
+# sound (about 32 ms instead of 64). Delete this line to go back to 1024.
+export JD_BUFFER=512
 unset LD_PRELOAD
 export LD_LIBRARY_PATH="/mnt/SDCARD/.tmp_update/lib/parasyte:/lib:/config/lib:/mnt/SDCARD/miyoo/lib:/mnt/SDCARD/.tmp_update/lib:$LD_LIBRARY_PATH"
 
