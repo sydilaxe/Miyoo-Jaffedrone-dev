@@ -69,6 +69,11 @@ jobs:
           grep -q "latch release 12 s: .*: 1)" $r
           grep -q "save compat v0.8: load=1 scale=TIRUS playmode=1 release=80 attack=68" $r
           grep -q "save compat v0.11: load=1 attack=42 s ring=77 air=0 listening=0" $r
+          grep -q "save compat v0.12: load=1 bpm=70 playmode=1 air=33 output=0" $r
+          grep -q "clock out: 2 PPQN at 120 BPM on the right -> 16 pulses in 4 s, mean gap 250.00 ms, width 5.00 ms, other values 0" $r
+          grep -q "clock out: 24 PPQN at 120 BPM on the right -> 192 pulses in 4 s, mean gap 20.83 ms, width 5.00 ms, other values 0" $r
+          grep -q "clock out: 2 PPQN at 120 BPM on the left -> 16 pulses .* other values 0" $r
+          grep -q "clock out stopped: pulses 0 (want 0)" $r
           grep -q "air in latch: .*(want them singing: 1), a listener refuses the latch 1" $r
           grep -q "latch attack: .*: 1)" $r
           grep -q "latch harmonic: .*(x2.0" $r

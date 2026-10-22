@@ -263,9 +263,12 @@ static void preset_load(int i)
 {
     char p[512];
     preset_path(i, p, sizeof p);
-    int sync = song.gp[GP_SYNC]; /* the Wi-Fi setting belongs to the room, not the preset */
+    /* the Wi-Fi and output settings belong to the room, not the preset */
+    int keep[5] = {song.gp[GP_SYNC], song.gp[GP_OUTPUT], song.gp[GP_CLKSIDE], song.gp[GP_PPQN], song.gp[GP_PULSE]};
     if (song_load(p)) {
-        song.gp[GP_SYNC] = sync;
+        song.gp[GP_SYNC] = keep[0];
+        for (int k = 0; k < 4; k++)
+            song.gp[GP_OUTPUT + k] = keep[1 + k];
         engine_set_bpm((float)song.gp[GP_BPM]);
         say("PRESET %d", i + 1);
     }
@@ -323,7 +326,10 @@ static void layout(int pg)
                                            {GP_SCALE, GP_CHANGES, GP_PLAYMODE}};
             for (int r = 0; r < 3; r++)
                 for (int c = 0; c < 3; c++)
-                    cell(3 + c * 213, SONGC_Y + r * 50, 207, 46, CK_G, 0, rows[r][c]);
+                    cell(3 + c * 213, SONGC_Y + r * 37, 207, 34, CK_G, 0, rows[r][c]);
+            /* the output: stereo, or mono + clock pulses for other gear */
+            for (int c = 0; c < 4; c++)
+                cell(3 + c * 160, SONGC_Y + 3 * 37, 154, 34, CK_G, 0, GP_OUTPUT + c);
         }
         break;
     case PAGE_MIX:
@@ -452,6 +458,10 @@ static void adjust(int dir, int repeats)
             nv == 0 ? "A STRING: BOW AND PLUCK" : nv <= NEXCITE ? "A WIND: BREATH AND TONGUE" : "STRUCK: MALLET AND BOW");
     if (c->kind == CK_G && c->b == GP_MODE)
         say("%s", nv == MODE_MONO ? "MONO: ALL STRINGS FOLLOW STRING 1" : "CHORD: EACH STRING ITS OWN NOTE");
+    if (c->kind == CK_G && c->b == GP_OUTPUT)
+        say("%s", nv == OUT_MONO_CLOCK ? "MONO AUDIO + CLOCK OUT" : "STEREO OUT");
+    if (c->kind == CK_G && c->b == GP_PPQN)
+        say("%d PPQN%s", clk_ppqn_value(nv), clk_ppqn_value(nv) == 2 ? ": POCKET OPERATOR / VOLCA" : clk_ppqn_value(nv) == 24 ? ": DIN SYNC" : "");
 }
 
 /* the string of the selected cell, or -1 */
@@ -1190,6 +1200,10 @@ static void draw_cells(void)
             on = 0; /* modes are for EQUAL */
         if (c->kind == CK_G && song.gp[GP_KEYLOCK] && (c->b == GP_SCALE || c->b == GP_ROOT || c->b == GP_MODALITY))
             on = 0; /* locked */
+        if (c->kind == CK_G && c->b > GP_OUTPUT && song.gp[GP_OUTPUT] != OUT_MONO_CLOCK)
+            on = 0; /* no clock in stereo */
+        if (c->kind == CK_S && c->b == SP_PAN && song.gp[GP_OUTPUT] == OUT_MONO_CLOCK)
+            on = 0; /* mono + clock plays every voice from the centre */
         param_row(c->x, c->y, c->w, c->h, i == sel_cell[page], on, c->kind == CK_S ? sparam_name(c->a, c->b) : d->name, val, t,
                   d->min < 0, cell_col(c));
     }
@@ -1330,7 +1344,7 @@ static void draw_mix(void)
         gfx_fill(mx, my, mw, 5, C_PANEL2);
         int lv = (int)(mw * fminf(1.f, sqrtf(live.meter[s] * 4.f)) * (on ? 1 : 0));
         gfx_fill(mx, my, lv, 5, col);
-        int pp = mx + mw / 2 + song.sp[s][SP_PAN] * mw / 100;
+        int pp = mx + mw / 2 + (song.gp[GP_OUTPUT] == OUT_MONO_CLOCK ? 0 : song.sp[s][SP_PAN] * mw / 100);
         gfx_fill(pp - 1, my - 4, 3, 13, C_TEXT);
     }
     int mm = (int)(628 * fminf(1.f, live.master_meter));

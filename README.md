@@ -310,7 +310,8 @@ The SONG page holds:
 
 - **Ten presets.** Each keeps everything: the sound, the rings, the tuning and the progression memory. Choose a
   tile: **A** loads it, **X** saves the current song to it, and **R2 + Y** clears it. Each tile shows its
-  scale, engine and tempo, and a mark if it holds a progression. Loading a preset keeps the Wi-Fi sync setting.
+  scale, engine and tempo, and a mark if it holds a progression. Loading a preset keeps the Wi-Fi sync and
+  output settings.
 - **Chord memory.** Set **PROG** to RECORD and each chord change is kept, starting from the chord sounding now,
   up to 16. Set it to PLAY and SELECT or CHANGES steps through the kept chords in order, round and round.
   FREE goes back to the algorithm. R2 + Y on PROG clears the memory. The kept chords are shown as tiles, with
@@ -320,6 +321,14 @@ The SONG page holds:
   KEY LOCK keeps the root, scale and mode from changing, even from shortcuts, and tunes every chord exactly
   (no random fine detune, no gamelan beating).
 - **ATTACK and RELEASE:** how the drone fades in and out when START starts or stops it, from 0.02 to 10 seconds.
+- **OUTPUT: stereo, or mono + clock** for syncing other gear, as on HI5. **MONO+CLK** puts the sound in mono
+  on one side of the headphone jack and clock pulses on the other; split it with a stereo-to-two-mono cable.
+  **CLOCK ON** picks the side (RIGHT by default), **PPQN** the pulses per quarter note (1, 2, 4, 8, 16, 24 or
+  32: 2 for Pocket Operators and Volcas, 24 for DIN sync) and **PULSE** the width (1 to 20 ms, 5 by
+  default). The pulses run only while the drone plays, fall on the beat (they leave with the sound, after the
+  leveller's few milliseconds of look-ahead) and follow tap tempo and Wi-Fi sync. In mono + clock every
+  string's PAN, the sympathetic strings' spread and AURA's seating play from the centre; the settings are kept
+  and come back with STEREO. Binaural summed to mono is OMBAK. Presets keep the output settings you have.
 
 ## Binaural
 

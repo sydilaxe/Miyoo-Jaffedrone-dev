@@ -8,11 +8,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define JD_VERSION "0.12.1"
+#define JD_VERSION "0.13"
 
 #define NS 5
 #define NSP 28 /* params per string */
-#define NGP 28 /* global params */
+#define NGP 32 /* global params */
 #define NPROG 16 /* chords in the progression memory */
 #define NPRESET 10
 #define NLFO 2
@@ -42,12 +42,20 @@ enum { RING_PLUCK, RING_BOW, NRING };
  * string's rhythm */
 enum { GP_MODE, GP_SCALE, GP_ROOT, GP_CHANGES, GP_BPM, GP_DRIFT, GP_GLIDE, GP_CUTOFF, GP_MASTER, GP_SYNC,
        GP_MOTION, GP_HOME, GP_COLOR, GP_EVOLVE, GP_CHANCE, GP_RELATE, GP_ENGINE, GP_EXCITE, GP_MATERIAL,
-       GP_SUB, GP_SUBDIV, GP_SUBRES, GP_ATTACK, GP_RELEASE, GP_KEYLOCK, GP_MODALITY, GP_PROG, GP_PLAYMODE };
+       GP_SUB, GP_SUBDIV, GP_SUBRES, GP_ATTACK, GP_RELEASE, GP_KEYLOCK, GP_MODALITY, GP_PROG, GP_PLAYMODE,
+       GP_OUTPUT, GP_CLKSIDE, GP_PPQN, GP_PULSE };
 /* GP_ATTACK / GP_RELEASE: how the drone fades in and out with START.
  * GP_KEYLOCK: for playing with others: the root, scale and mode stay put and
  * chords are tuned exactly. GP_MODALITY: the mode chords are drawn from in
  * EQUAL (AUTO is Dorian). GP_PROG: FREE (the algorithm), RECORD (each chord
- * is kept, up to NPROG) or PLAY (the kept chords, in turn, round and round). */
+ * is kept, up to NPROG) or PLAY (the kept chords, in turn, round and round).
+ * GP_OUTPUT: STEREO, or MONO + CLOCK: the sound in mono on one side and
+ * clock pulses on the other (GP_CLKSIDE: 0 = clock on the right), GP_PPQN
+ * pulses per quarter note (an index into 1, 2, 4, 8, 16, 24, 32), GP_PULSE
+ * the pulse width in ms. In MONO + CLOCK every pan and stereo spread plays
+ * from the centre (the settings are kept). */
+enum { OUT_STEREO, OUT_MONO_CLOCK };
+#define NPPQN 7
 enum { MODAL_AUTO, MODAL_IONIAN, MODAL_DORIAN, MODAL_PHRYGIAN, MODAL_LYDIAN, MODAL_MIXOLYDIAN, MODAL_AEOLIAN,
        MODAL_LOCRIAN, NMODAL };
 enum { PROG_FREE, PROG_RECORD, PROG_PLAY, NPROGMODE };
@@ -169,6 +177,7 @@ const ParamDef *lparam_def(int p);
 const ParamDef *fparam_def(int p);
 void sparam_format(int s, int p, char *b, int n);
 void gparam_format(int p, char *b, int n);
+int clk_ppqn_value(int i); /* GP_PPQN index -> pulses per quarter note */
 void lparam_format(int l, int p, char *b, int n);
 void fparam_format(int p, char *b, int n);
 void note_name(int midi, char *b, int n);

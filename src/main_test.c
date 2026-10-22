@@ -1676,6 +1676,76 @@ int main(int argc, char **argv)
         printf("save compat v0.11: load=%d attack=%d s ring=%d air=%d listening=%d\n", ok, song.sp[0][SP_LATK],
                song.fx[FX_SRING], song.fx[FX_AIR], listening);
     }
+    /* a v0.12 song (JDR16) loads: everything kept, stereo out */
+    {
+        struct {
+            uint32_t magic;
+            int on[NS], sp[NS][NSP], gp[28], lfo[NLFO][NLP], fx[NFX];
+            int prog_n, prog_pos, prog_note[NPROG][NS], prog_fine[NPROG][NS];
+            char prog_name[NPROG][24];
+        } o16;
+        memset(&o16, 0, sizeof o16);
+        o16.magic = 0x4a445210u;
+        for (int v = 0; v < NS; v++)
+            o16.on[v] = 1, o16.sp[v][SP_LEVEL] = 60, o16.sp[v][SP_PSTEPS] = o16.sp[v][SP_PPULSES] = 4;
+        o16.gp[GP_SCALE] = 16, o16.gp[GP_ROOT] = 45, o16.gp[GP_BPM] = 70, o16.gp[GP_PLAYMODE] = PLAY_LATCH;
+        o16.fx[FX_AIR] = 33;
+        char p16[512];
+        snprintf(p16, sizeof p16, "%s/v012.jds", out);
+        FILE *f = fopen(p16, "wb");
+        fwrite(&o16, sizeof o16, 1, f);
+        fclose(f);
+        int ok = song_load(p16);
+        printf("save compat v0.12: load=%d bpm=%d playmode=%d air=%d output=%d\n", ok, song.gp[GP_BPM],
+               song.gp[GP_PLAYMODE], song.fx[FX_AIR], song.gp[GP_OUTPUT]);
+    }
+    /* mono + clock out: the pulses' count, spacing and width on the clock
+     * side, nothing but pulses there, and the sound on the other side */
+    {
+        static const int idx[3] = {1, 5, 6}; /* 2, 24 and 32 PPQN */
+        for (int k = 0; k < 4; k++) {
+            song_default();
+            for (int v = 0; v < NS; v++)
+                song.sp[v][SP_PAN] = v & 1 ? 50 : -50; /* hard pans: played from the centre */
+            song.gp[GP_OUTPUT] = OUT_MONO_CLOCK;
+            song.gp[GP_PPQN] = idx[k < 3 ? k : 0];
+            song.gp[GP_CLKSIDE] = k == 3; /* the last pass: clock on the left */
+            engine_init(RATE);
+            engine_set_bpm(120.f);
+            engine_set_playing(1);
+            engine_render(pcm, RATE * 4);
+            int cs = k == 3 ? 0 : 1, edges = 0, prev = 0, width = 0, last = -1, other = 0;
+            double gaps = 0;
+            float apk = 0.f;
+            for (int i = 0; i < RATE * 4; i++) {
+                int c = pcm[2 * i + cs], hi = c > 16000;
+                other += c != 0 && c != 30400;
+                if (hi && !prev) {
+                    if (last >= 0)
+                        gaps += i - last;
+                    last = i, edges++;
+                }
+                if (hi && edges == 1)
+                    width++;
+                prev = hi;
+                if (abs(pcm[2 * i + 1 - cs]) > apk)
+                    apk = (float)abs(pcm[2 * i + 1 - cs]);
+            }
+            printf("clock out: %d PPQN at 120 BPM on the %s -> %d pulses in 4 s, mean gap %.2f ms, width %.2f ms, "
+                   "other values %d, sound peak %.2f\n",
+                   clk_ppqn_value(song.gp[GP_PPQN]), cs ? "right" : "left", edges, gaps / (edges - 1) * 1000.0 / RATE,
+                   width * 1000.0 / RATE, other, apk / 32768.f);
+        }
+        engine_set_playing(0);
+        engine_render(pcm, RATE / 2);
+        int any = 0;
+        for (int i = 0; i < RATE / 2; i++)
+            any += pcm[2 * i] > 16000;
+        printf("clock out stopped: pulses %d (want 0)\n", any);
+        song_default();
+        engine_init(RATE);
+        engine_set_playing(1);
+    }
     /* the LATCH screen: 1 plucked, 3 bowed, 4 fading, the rest silent */
     {
         song_default();

@@ -3,6 +3,14 @@ Jaffedrone test build for the Miyoo Mini Plus (OnionOS).
 **Install:** unzip `Jaffedrone-miyoo.zip` at the root of the SD card (it contains `App/Jaffedrone/`),
 then open **Apps → Jaffedrone**.
 
+**New in 0.13**
+- **Mono + clock out**, as on HI5: on SONG, set **OUTPUT** to **MONO+CLK** and the sound plays in mono on one
+  side of the headphone jack, with clock pulses on the other to lead a Pocket Operator, Volca or other gear.
+  **CLOCK ON** picks the side, **PPQN** the pulses per quarter note (2 for PO/Volca, 24 for DIN) and
+  **PULSE** the width. The pulses follow the beat and Wi-Fi sync, and stop with the drone.
+- In mono + clock every pan and stereo spread plays from the centre; your settings come back with STEREO.
+- Songs save the output (format JDR17); older songs load in STEREO. Loading a preset keeps the output settings.
+
 **New in 0.12.1**
 - AIR is renamed **AURA**, so AIR means only a wind's breath noise.
 
