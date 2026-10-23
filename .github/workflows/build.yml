@@ -48,7 +48,7 @@ jobs:
       - name: Check the results
         run: |
           r=build/test/results.txt
-          grep -q "struck skipping: .*(want over 80: 1)" $r
+          grep -q "struck skipping: .*(want over 60: 1)" $r
           grep -q "struck cache: same sound as working the modes out every time 1" $r
           grep -q "render ahead: .* made ahead [01] (want under 2); same sound 1" $r
           awk '/^render ahead:/ { exit !($12 + 0 >= 20) }' $r

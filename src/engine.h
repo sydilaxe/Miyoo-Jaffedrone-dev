@@ -8,7 +8,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define JD_VERSION "0.12.1"
+#define JD_VERSION "0.12.2"
 
 #define NS 5
 #define NSP 28 /* params per string */
@@ -155,6 +155,7 @@ int engine_voice_wind(int s);          /* 1 if voice s is a wind voice */
 int engine_voice_perc(int s);          /* 1 if voice s is a struck voice */
 extern int engine_mallet_lands; /* the dropped mallets' landings after the strike (tests) */
 int engine_perc_count(const Song *g);  /* how many voices are struck */
+extern unsigned engine_perc_clamps; /* samples a struck voice's limiter engaged (diagnostics) */
 extern int engine_perc_skip;  /* skip struck modes that have died away (on; off only in tests) */
 extern float engine_air, engine_room; /* AIR: how strongly listeners hear (0 .. 1, from FX_AIR); room unused */
 extern int engine_listen;           /* AIR: a bit for each listening voice (from SP_LISTEN) */

@@ -3,6 +3,12 @@ Jaffedrone test build for the Miyoo Mini Plus (OnionOS).
 **Install:** unzip `Jaffedrone-miyoo.zip` at the root of the SD card (it contains `App/Jaffedrone/`),
 then open **Apps → Jaffedrone**.
 
+**New in 0.12.2**
+- Cleaner struck voices: a mallet striking a body that is already ringing no longer starts inside its
+  surface (a violent spike that the limiter clipped flat: the crunch on hard strikes, L2 drops and rhythms
+  on long-ringing gongs and bowls). The struck limiter now turns the voice down smoothly instead of
+  clipping its waveform.
+
 **New in 0.12.1**
 - AIR is renamed **AURA**, so AIR means only a wind's breath noise.
 
