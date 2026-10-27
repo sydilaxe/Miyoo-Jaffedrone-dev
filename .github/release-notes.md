@@ -11,6 +11,12 @@ then open **Apps → Jaffedrone**.
 - In mono + clock every pan and stereo spread plays from the centre; your settings come back with STEREO.
 - Songs save the output (format JDR17); older songs load in STEREO. Loading a preset keeps the output settings.
 
+**New in 0.12.2**
+- Cleaner struck voices: a mallet striking a body that is already ringing no longer starts inside its
+  surface (a violent spike that the limiter clipped flat: the crunch on hard strikes, L2 drops and rhythms
+  on long-ringing gongs and bowls). The struck limiter now turns the voice down smoothly instead of
+  clipping its waveform.
+
 **New in 0.12.1**
 - AIR is renamed **AURA**, so AIR means only a wind's breath noise.
 

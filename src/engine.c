@@ -640,10 +640,11 @@ typedef struct {
     float zr[PMAX] __attribute__((aligned(16))); /* kept apart, four at a time for the vector unit */
     float zi[PMAX] __attribute__((aligned(16)));
     float hm_y, hm_v, hm_hard;
-    int hm_on;
+    int hm_on, hm_new;
     float bow_lpn;           /* rosin: the bow's slow noise */
     float bow_ud;            /* the surface's speed under the bow, last sample */
     float inj_pk;            /* the most the bridge pushed it, last sub-block */
+    float lim_g;             /* its limiter's gain (1: not limiting) */
     float ap[2][2]; /* STIFF: two dispersive allpasses in the loop */
     float fold_x1;  /* FOLD: last input, for the anti-aliased folder */
     /* WIND: the jet delay, a DC blocker, the lip resonator, breath and tongue */
@@ -811,6 +812,10 @@ static void string_pluck(String *s, float amp)
  * little after the strike, each rebound lower (half the force) and sooner
  * (60% of the gap before: 50, 30, 18, 11 ms ...) until it comes to rest */
 #define DROP_GAP 0.05f
+/* the dropped mallet on a struck body: a little softer than it sounds,
+ * harder than a pluck's (it lands again and again on a ringing body) */
+#define HM_AMP 0.8f
+#define HM_HARD 2.f
 int engine_mallet_lands; /* the dropped mallets' landings, counted (for the tests) */
 static void hammer_drop(String *s, float amp)
 {
@@ -838,8 +843,8 @@ static void string_hammer(String *s, float amp)
     if (LISTENING(s))
         return;
     if (vkind(s->voice_was) == 2) { /* struck: a hard mallet, hit harder, dropped so it bounces */
-        perc_strike(s, fminf(1.f, amp * 1.3f), 3.f);
-        hammer_drop(s, fminf(1.f, amp * 1.3f));
+        perc_strike(s, amp * HM_AMP, HM_HARD);
+        hammer_drop(s, amp * HM_AMP);
         return;
     }
     if (vkind(s->voice_was) == 1) { /* a breath: a flutter tongue, the tongue rolling "frrr" and settling */
@@ -1920,6 +1925,7 @@ static int perc_gen; /* a new start: every body works its modes out afresh */
  * four at a time, until the mallet or bow wakes the body again. (Off only
  * to test that skipping changes nothing that can be heard.) */
 int engine_perc_skip = 1;
+unsigned engine_perc_clamps; /* samples a struck voice's limiter clamped (diagnostics) */
 int engine_perc_cache = 1; /* the modes kept between sub-blocks (off only to test it changes nothing) */
 #define PERC_REST 1e-10f /* a mode's energy at rest (|z| 1e-5) */
 
@@ -1938,7 +1944,7 @@ static void perc_init_models(void)
 static void perc_strike(String *s, float amp, float hard)
 {
     s->hm_on = 1;
-    s->hm_y = 0.f; /* touching the surface, moving in */
+    s->hm_new = 1; /* touching the surface (wherever it is), moving in */
     s->hm_v = amp;
     s->hm_hard = hard;
 }
@@ -2050,6 +2056,11 @@ static void perc_tick(String *st, const PercVoice *v, float inj, float *py, floa
         for (int k = 0; k < v->n; k++)
             u += v->pw[k] * st->zi[k]; /* displacement: Im(z) / omega */
         u *= T; /* (per sample units) */
+        if (st->hm_new) { /* it meets the surface where the surface is now: a body already
+                           * ringing is not struck from inside it (a violent spike) */
+            st->hm_y = u;
+            st->hm_new = 0;
+        }
         float d = st->hm_y - u;
         if (d > 0.f)
             F = v->K * st->hm_hard * d * (1.f + d * 4000.f); /* the felt stiffens as it is pressed */
@@ -2106,11 +2117,22 @@ static void perc_tick(String *st, const PercVoice *v, float inj, float *py, floa
     st->bow_ud = ud;
     o *= 0.35f;
     float a = fabsf(o);
-    if (a > PERC_CEIL) { /* the limiter, each sample: the peak held to the ceiling, the modes eased down */
-        o *= PERC_CEIL / a;
+    /* the limiter: the voice turned down the moment a peak would pass the
+     * ceiling, and let back up over about 80 ms. A gain that is held, not one
+     * that follows the waveform, so the peak is kept from passing without its
+     * shape being clipped flat (which crunched on hard mallet strikes); over
+     * the ceiling the modes are eased down too, so energy cannot pile up */
+    float need = a > PERC_CEIL ? PERC_CEIL / a : 1.f;
+    if (need < st->lim_g)
+        st->lim_g = need;
+    else
+        st->lim_g += (1.f - st->lim_g) * (12.5f / sr); /* back up over about 80 ms */
+    if (a > PERC_CEIL) {
+        engine_perc_clamps++;
         for (int k = 0; k < cnt; k++)
             st->zr[k] *= 0.998f, st->zi[k] *= 0.998f;
     }
+    o *= st->lim_g;
     if (v->sizzle > 0.f) /* a rattle that follows how loud it rings */
         o *= 1.f + v->sizzle * 1.5f * fnoise() * fminf(1.f, fabsf(o) * 3.f);
     st->env = fmaxf(fabsf(o), st->env * 0.9997f);
@@ -2704,7 +2726,7 @@ void engine_render(int16_t *out, int frames)
                 if (pv_on[s] && st->bounce_n > 0) { /* the dropped mallet lands again on the body */
                     float amp = st->bounce_amp;
                     if (hammer_lands(st))
-                        perc_strike(st, amp, 3.f);
+                        perc_strike(st, amp, HM_HARD);
                 }
                 if (pv_on[s]) { /* a struck body barely hears the bridge */
                     perc_tick(st, &pv[s], 0.2f * couple * (bridge - st->last_y) + air_k[2] * air, &y, &o);
@@ -3108,7 +3130,7 @@ void engine_init(int sample_rate)
     live.rate = sample_rate;
     memset(str, 0, sizeof str);
     for (int s = 0; s < NS; s++)
-        str[s].art_t = -1.f; /* no tongued note yet */
+        str[s].art_t = -1.f, str[s].lim_g = 1.f; /* no tongued note yet; nothing limited */
     bpm_f = (float)song.gp[GP_BPM];
     for (int s = 0; s < NS; s++)
         str[s].bow_open = 1, str[s].bow_env = 1.f;
