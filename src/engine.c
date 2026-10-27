@@ -45,7 +45,8 @@ static inline float exp_neg(float x)
     return u.f;
 }
 
-#define SONG_MAGIC 0x4a445210u    /* JDR16: AIR, and each voice playing or listening (v0.12) */
+#define SONG_MAGIC 0x4a445211u    /* JDR17: mono + clock output (v0.13) */
+#define SONG_MAGIC_V16 0x4a445210u /* JDR16: AIR, and each voice playing or listening (v0.12) */
 #define SONG_MAGIC_V15 0x4a44520fu /* JDR15: per-string LATCH bow ATTACK (v0.9) */
 #define SONG_MAGIC_V14 0x4a44520eu /* JDR14: LATCH play mode, per-string RELEASE (v0.8) */
 #define SONG_MAGIC_V13 0x4a44520du /* JDR13: each voice a string or a wind (v0.6) */
@@ -171,6 +172,18 @@ typedef struct { /* JDR15: the song before AIR */
     char prog_name[NPROG][24];
 } SongV15;
 
+typedef struct { /* JDR16: the song before the mono + clock output */
+    uint32_t magic;
+    int on[NS];
+    int sp[NS][NSP];
+    int gp[28];
+    int lfo[NLFO][NLP];
+    int fx[NFX];
+    int prog_n, prog_pos;
+    int prog_note[NPROG][NS], prog_fine[NPROG][NS];
+    char prog_name[NPROG][24];
+} SongV16;
+
 #define NBEAT 33 /* binaural beat settings */
 Song song;
 Live live;
@@ -257,7 +270,8 @@ static const ParamDef gparams[NGP] = {{"VOICING", 0, 1},   {"SCALE", 0, NSCALE -
                                       {"SUB", 0, 100},     {"SUB DIV", 0, NSUBDIV - 1}, {"SUB RES", 0, 100},
                                       {"ATTACK", 0, 100},  {"RELEASE", 0, 100},     {"KEY LOCK", 0, 1},
                                       {"MODE", 0, NMODAL - 1}, {"PROG", 0, NPROGMODE - 1},
-                                      {"PLAY MODE", 0, NPLAYMODE - 1}};
+                                      {"PLAY MODE", 0, NPLAYMODE - 1}, {"OUTPUT", 0, 1},
+                                      {"CLOCK ON", 0, 1},  {"PPQN", 0, NPPQN - 1},    {"PULSE", 1, 20}};
 static const ParamDef lparams[NLP] = {{"RATE", 0, 6}, {"SHAPE", 0, NSH - 1}, {"TARGET", 0, NLT - 1}, {"DEPTH", 0, 100}};
 static const ParamDef fparams[NFX] = {{"TIME", 0, 7},   {"FEEDBK", 0, 95}, {"MIX", 0, 100},
                                       {"SEND", 0, 100}, {"TIME", 0, 100},  {"TONE", 0, 100},
@@ -310,7 +324,8 @@ static const int def_sp[NS][NSP] = {{0, 0, 80, 35, 85, 45, 0, 0, 0, 0, 1, 4, 1, 
                                     {11, 0, 40, 50, 90, 65, 0, 0, 0, 0, 1, 7, 2, 3, 0, 7, 3, 0, 2, -12, 70, 100, 0, 0, 0, 55, 68, 0},
                                     {14, 2, 30, 55, 93, 70, 0, 0, 0, 0, 1, 6, 1, 2, 1, 5, 3, 0, 2, 12, 60, 80, 0, 0, 0, 55, 68, 0}};
 static const int def_gp[NGP] = {MODE_CHORD, 1, 45, 4, 72, 30, 3, 70, 80, SYNC_OFF, 50, 50, 45, 30, 75, 1,
-                                ENG_STRINGS, EX_FLUTE, MAT_WOOD, 0, SUB_OCT, 60, 20, 45, 0, MODAL_AUTO, PROG_FREE, PLAY_RINGS};
+                                ENG_STRINGS, EX_FLUTE, MAT_WOOD, 0, SUB_OCT, 60, 20, 45, 0, MODAL_AUTO, PROG_FREE, PLAY_RINGS,
+                                OUT_STEREO, 0, 1, 5};
 static const char *const engine_names[NENGINE] = {"STRINGS", "WIND"};
 static const char *const excite_names[NEXCITE] = {"LIP", "REED", "DOUBLE", "FLUTE", "FREE", "RECORDER", "BANSURI"};
 static const char *const material_names[NMATERIAL] = {"WOOD", "METAL", "CERAMIC", "GLASS"};
@@ -373,6 +388,8 @@ const ParamDef *gparam_def(int p) { return &gparams[p]; }
 const ParamDef *lparam_def(int p) { return &lparams[p]; }
 const ParamDef *fparam_def(int p) { return &fparams[p]; }
 const char *sync_mode_name(int m) { return sync_names[m]; }
+static const int ppqn_values[NPPQN] = {1, 2, 4, 8, 16, 24, 32};
+int clk_ppqn_value(int i) { return ppqn_values[i]; }
 int engine_nscales(void) { return NSCALE; }
 const char *engine_scale_name(int sc) { return scales[sc].name; }
 
@@ -497,6 +514,10 @@ void gparam_format(int p, char *b, int n)
     case GP_RELEASE: snprintf(b, n, "%.1f s", fade_secs(x)); return;
     case GP_KEYLOCK: snprintf(b, n, "%s", x ? "LOCKED" : "OFF"); return;
     case GP_PLAYMODE: snprintf(b, n, "%s", x == PLAY_LATCH ? "LATCH" : "RINGS"); return;
+    case GP_OUTPUT: snprintf(b, n, "%s", x == OUT_MONO_CLOCK ? "MONO+CLK" : "STEREO"); return;
+    case GP_CLKSIDE: snprintf(b, n, "%s", x ? "LEFT" : "RIGHT"); return;
+    case GP_PPQN: snprintf(b, n, "%d", ppqn_values[x]); return;
+    case GP_PULSE: snprintf(b, n, "%d ms", x); return;
     case GP_MODALITY: {
         static const char *const mn[NMODAL] = {"AUTO", "IONIAN", "DORIAN", "PHRYGIAN", "LYDIAN", "MIXOLYD", "AEOLIAN", "LOCRIAN"};
         snprintf(b, n, "%s", song.gp[GP_SCALE] == 0 ? mn[x] : "SCALE");
@@ -2328,6 +2349,13 @@ void engine_render(int16_t *out, int frames)
     float meter[NS] = {0}, mm = 0.f;
     int mono = song.gp[GP_MODE] == MODE_MONO;
     float sps16 = sr * 15.f / bpm_f; /* samples per 16th */
+    /* MONO + CLOCK: the sound from the centre on one side, clock pulses on
+     * the other. The pulses go out la_n samples late, with the sound the
+     * look-ahead leveller holds back, so each lands on its beat. */
+    int clk_out = song.gp[GP_OUTPUT] == OUT_MONO_CLOCK, clk_left = song.gp[GP_CLKSIDE];
+    int clk_ppqn = ppqn_values[song.gp[GP_PPQN]];
+    double clk_spp = sr * 60.0 / (bpm_f * clk_ppqn); /* samples per clock pulse */
+    double clk_w = fmin(song.gp[GP_PULSE] * 0.001 * sr, clk_spp * 0.5);
     /* GLIDE OFF still slides over ~10 ms, so a jump never clicks */
     float glide_samps = fmaxf(sps16 * glide_div16[song.gp[GP_GLIDE]], 0.01f * sr);
     float dly_target = fminf(sps16 * dly_div16[song.fx[FX_DTIME]], DLY_MAX - 4.f);
@@ -2369,7 +2397,7 @@ void engine_render(int16_t *out, int frames)
     if (air_on)
         for (int a = 0; a < NS; a++)
             for (int b = 0; b < NS; b++) {
-                float dx = (song.sp[a][SP_PAN] - song.sp[b][SP_PAN]) / 50.f * 1.5f, dz = 0.4f + 0.25f * abs(a - b);
+                float dx = clk_out ? 0.f : (song.sp[a][SP_PAN] - song.sp[b][SP_PAN]) / 50.f * 1.5f, dz = 0.4f + 0.25f * abs(a - b);
                 float d = sqrtf(dx * dx + dz * dz);
                 air_d[a][b] = (int)(d / 343.f * sr) + 1;
                 if (air_d[a][b] > AIRN - 1)
@@ -2487,7 +2515,7 @@ void engine_render(int16_t *out, int frames)
     float sy_gain = nsy ? song.fx[FX_SLEVEL] / 100.f * 2.5f / sqrtf((float)nsy) : 0.f;
     float sy_drive = 0.02f, sy_pl[NSYMP], sy_pr[NSYMP];
     for (int k = 0; k < NSYMP; k++) { /* spread alternately left and right, wider up the set */
-        float pan = (k & 1 ? 1.f : -1.f) * (0.25f + 0.6f * (float)k / NSYMP);
+        float pan = clk_out ? 0.f : (k & 1 ? 1.f : -1.f) * (0.25f + 0.6f * (float)k / NSYMP);
         sy_pl[k] = 1.f - pan, sy_pr[k] = 1.f + pan;
     }
     if (nsy)
@@ -2865,7 +2893,7 @@ void engine_render(int16_t *out, int frames)
                     engine_vout_pk[s] = fabsf(o);
                 if (air_on) /* its sound goes into the air (who hears it: see air_g) */
                     air_hist[s][air_w] = o * air_send[pv_on[s] ? 2 : wv_on[s] ? 1 : 0];
-                float pan = song.sp[s][SP_PAN] / 50.f;
+                float pan = clk_out ? 0.f : song.sp[s][SP_PAN] / 50.f;
                 L += o * (1.f - pan);
                 R += o * (1.f + pan);
                 float a = fabsf(y);
@@ -3039,6 +3067,15 @@ void engine_render(int16_t *out, int frames)
                 stats.lev_min = agc_g * lev_g;
             /* to 16 bits with triangular dither, rounded: quiet tails fade
              * into soft noise instead of grainy steps */
+            if (clk_out) {
+                float mono_out = 0.5f * (L + R);
+                double ph = fmod(beat_phase * clk_ppqn - la_n / clk_spp, 1.0);
+                int16_t c = live.playing && (ph < 0.0 ? ph + 1.0 : ph) * clk_spp < clk_w ? 30400 : 0;
+                int16_t a16 = (int16_t)lrintf(mono_out * 32000.f + frand() - frand());
+                out[2 * n] = clk_left ? c : a16;
+                out[2 * n + 1] = clk_left ? a16 : c;
+                continue;
+            }
             out[2 * n] = (int16_t)lrintf(L * 32000.f + frand() - frand());
             out[2 * n + 1] = (int16_t)lrintf(R * 32000.f + frand() - frand());
         }
@@ -3212,6 +3249,7 @@ static void from_v7(Song *s, const SongV7 *o)
 FROM_V1X(from_v13, SongV13)
 FROM_V1X(from_v14, SongV14)
 FROM_V1X(from_v15, SongV15)
+FROM_V1X(from_v16, SongV16)
 
 static void from_v12(Song *s, const SongV12 *o)
 {
@@ -3355,6 +3393,7 @@ static int song_read(const char *path, Song *out)
     SongV13 o13;
     SongV14 o14;
     SongV15 o15;
+    SongV16 o16;
     SongV6 o6;
     SongV7 o7;
     SongV8 o8;
@@ -3366,6 +3405,10 @@ static int song_read(const char *path, Song *out)
         memcpy(&magic, buf, sizeof magic);
     if (magic == SONG_MAGIC && got == sizeof s)
         memcpy(&s, buf, sizeof s);
+    else if (magic == SONG_MAGIC_V16 && got == sizeof o16) {
+        memcpy(&o16, buf, sizeof o16);
+        from_v16(&s, &o16);
+    }
     else if (magic == SONG_MAGIC_V15 && got == sizeof o15) {
         memcpy(&o15, buf, sizeof o15);
         from_v15(&s, &o15);
@@ -3417,10 +3460,10 @@ static int song_read(const char *path, Song *out)
             s.lfo[l][p] = clampi(s.lfo[l][p], lparams[p].min, lparams[p].max);
     for (int p = 0; p < NFX; p++)
         s.fx[p] = clampi(s.fx[p], fparams[p].min, fparams[p].max);
-    if (magic != SONG_MAGIC && magic != SONG_MAGIC_V15 && magic != SONG_MAGIC_V14 && magic != SONG_MAGIC_V13 &&
+    if (magic != SONG_MAGIC && magic != SONG_MAGIC_V16 && magic != SONG_MAGIC_V15 && magic != SONG_MAGIC_V14 && magic != SONG_MAGIC_V13 &&
         magic != SONG_MAGIC_V12) /* the beat was in half hertz before JDR12 */
         s.fx[FX_BINBEAT] = beat_index(s.fx[FX_BINBEAT] * 0.5f);
-    if (magic != SONG_MAGIC && magic != SONG_MAGIC_V15 && magic != SONG_MAGIC_V14 && magic != SONG_MAGIC_V13 && s.gp[GP_ENGINE] == ENG_WIND) {
+    if (magic != SONG_MAGIC && magic != SONG_MAGIC_V16 && magic != SONG_MAGIC_V15 && magic != SONG_MAGIC_V14 && magic != SONG_MAGIC_V13 && s.gp[GP_ENGINE] == ENG_WIND) {
         /* a WIND song from before v0.6: every voice takes the exciter, and
          * the body the bore's material, as the engine used to */
         for (int i = 0; i < NS; i++)

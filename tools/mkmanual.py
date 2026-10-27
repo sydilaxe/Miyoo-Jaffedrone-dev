@@ -540,7 +540,7 @@ def build(out):
     s += [Paragraph("SONG: presets, chord memory and key", H1),
           side(Miyoo("song", {"DPAD": 1, "A": 2, "X": 3, "R2": 4, "Y": 4}),
                table([(num(1), "d-pad", "choose a preset slot or a setting"),
-                      (num(2), B("A"), "load the preset (your Wi-Fi setting stays)"),
+                      (num(2), B("A"), "load the preset (your Wi-Fi and output settings stay)"),
                       (num(3), B("X"), "save the sound and rhythms to the slot"),
                       (num(4), B("R2") + " + " + B("Y"), "clear the slot, or the chord memory")],
                      widths=(9 * mm, 20 * mm, None)),
@@ -553,7 +553,15 @@ def build(out):
                Paragraph("Playing with others", H2),
                Paragraph("<b>KEY LOCK</b> holds the root, scale and MODE (the mode chords come from in EQUAL) "
                          "and tunes chords exactly. <b>ATTACK</b> and <b>RELEASE</b> set how the drone fades "
-                         "in and out with " + B("START") + ".", P)), PageBreak()]
+                         "in and out with " + B("START") + ".", P),
+               Paragraph("Output: mono + clock", H2),
+               Paragraph("<b>OUTPUT</b> MONO+CLK plays the sound in mono on one side of the headphone jack and "
+                         "clock pulses on the other, to lead a Pocket Operator, Volca or other gear with a sync "
+                         "input (use a stereo-to-two-mono cable). <b>CLOCK ON</b> picks the side, <b>PPQN</b> the "
+                         "pulses per quarter note (2 for Pocket Operators and Volcas, 24 for DIN sync) and "
+                         "<b>PULSE</b> the width. The pulses run while the drone plays, on the beat and with "
+                         "Wi-Fi sync. Every PAN and stereo spread plays from the centre; the settings are kept "
+                         "for STEREO, and binaural becomes OMBAK.", P)), PageBreak()]
 
     # -------------------------------------------------- quiet view
     s += [Paragraph("The quiet view", H1),
