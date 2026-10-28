@@ -120,7 +120,7 @@ int ahead_ready(void)
     return n;
 }
 
-void ahead_read(int16_t *out, int frames)
+int ahead_read(int16_t *out, int frames)
 {
     /* wait for the frames, at most a buffer's time: past that the device
      * would run dry anyway, and the missing part is silence */
@@ -155,6 +155,7 @@ void ahead_read(int16_t *out, int frames)
     rpos = r + n;
     pthread_cond_signal(&want); /* room again: make more */
     pthread_mutex_unlock(&mx);
+    return n;
 }
 
 void ahead_lock(void) { pthread_mutex_lock(&eng); }

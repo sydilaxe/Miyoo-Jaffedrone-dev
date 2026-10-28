@@ -442,6 +442,9 @@ press reaches the sound at once. Settings in `launch.sh`, before `./jaffedrone`:
 - `JD_BUFFER=512`: smaller buffers, less delay from a press to the sound (1024 by default).
 - `JD_AHEAD=0`: make the sound in the driver's request, as before 0.11.3 (to compare).
 - `JD_RATE=44100`: a lower sample rate, about 8% less work.
+- `JD_SYNC_LATENCY=1024`: the frames the sound driver holds before they're heard (the buffer size by default).
+  Wi-Fi sync lines units up by what is heard, to within a millisecond or so; change this only if this unit
+  sounds early or late against another app's.
 
 ## Log
 
