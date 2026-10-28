@@ -9,6 +9,7 @@
 #include <string.h>
 #include <time.h>
 
+#include "aclock.h"
 #include "ahead.h"
 #include "engine.h"
 #include "gfx.h"
@@ -36,6 +37,13 @@ static void unlock(void) { SDL_UnlockAudio(); }
 static AudioTiming timing;
 static uint64_t clock0_us, made_us;
 static int use_ahead; /* the sound is made ahead by its own thread (see ahead.h) */
+
+/* make sound, and note where the music is after it for Wi-Fi sync */
+static void render_marked(int16_t *out, int frames)
+{
+    engine_render(out, frames);
+    aclock_made(frames, engine_position(), engine_steps_per_frame());
+}
 
 /* a dropout is when the device has played everything we made: real time
  * has run ahead of the audio produced by more than the device's buffers
@@ -70,11 +78,14 @@ static void audio_cb(void *ud, Uint8 *stream, int len)
     }
     made_us += timing.buffer_us;
     timing.calls++;
+    aclock_request(t0, len / 4);
     if (use_ahead) { /* only a copy here: the time making it is counted by its thread */
-        ahead_read((int16_t *)stream, len / 4);
+        int got = ahead_read((int16_t *)stream, len / 4);
+        if (got < len / 4)
+            aclock_silence(len / 4 - got);
         return;
     }
-    engine_render((int16_t *)stream, len / 4);
+    render_marked((int16_t *)stream, len / 4);
     uint32_t spent = (uint32_t)(now_us() - t0);
     timing.us_sum += spent;
     if (spent > timing.us_max)
@@ -148,9 +159,12 @@ int main(int argc, char **argv)
      * before 0.11.3); JD_CHUNK: the pieces they are made in */
     int ahead = getenv("JD_AHEAD") ? atoi(getenv("JD_AHEAD")) : bufsz;
     int chunk = getenv("JD_CHUNK") ? atoi(getenv("JD_CHUNK")) : 256;
+    /* the driver holds about a buffer before it's heard; JD_SYNC_LATENCY
+     * (frames) lines this unit up with other apps by ear if needed */
+    aclock_init(rate, getenv("JD_SYNC_LATENCY") ? atoi(getenv("JD_SYNC_LATENCY")) : bufsz);
     int have_audio = SDL_OpenAudio(&want, NULL) == 0;
     if (have_audio && ahead > 0)
-        use_ahead = ahead_start(engine_render, rate, chunk, ahead, 1);
+        use_ahead = ahead_start(render_marked, rate, chunk, ahead, 1);
     if (have_audio) {
         fprintf(stderr, "jaffedrone: audio %d Hz, %d frames/buffer\n", rate, bufsz);
         timing.buffer_us = (uint32_t)(1000000.0 * bufsz / rate);
