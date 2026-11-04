@@ -6,7 +6,7 @@ for meditation.
 
 **Manual:** [docs/Jaffedrone-Manual.pdf](docs/Jaffedrone-Manual.pdf) shows each command on a drawing of the Miyoo, with the app's screens (`make manual` rebuilds it).
 
-**Latest release:** [v0.14.0](../../releases/tag/v0.14.0) · [all releases](../../releases)
+**Latest release:** [v0.14.1](../../releases/tag/v0.14.1) · [all releases](../../releases)
 
 ## The strings
 
