@@ -6,6 +6,8 @@ for meditation.
 
 **Manual:** [docs/Jaffedrone-Manual.pdf](docs/Jaffedrone-Manual.pdf) shows each command on a drawing of the Miyoo, with the app's screens (`make manual` rebuilds it).
 
+**Latest release:** [v0.14.0](../../releases/tag/v0.14.0) · [all releases](../../releases)
+
 ## The strings
 
 Each string is a Karplus-Strong loop with the Jaffe-Smith extensions:
@@ -521,4 +523,6 @@ Every push runs the **build** workflow:
 
 To publish a release with the zip attached, go to **Actions → build → Run workflow** and fill in a tag such as
 `v0.11.0`. Pushing a `v*` tag, or creating a release on the website, does the same. The release text comes from
-`.github/release-notes.md`.
+`.github/release-notes.md`. Before tagging, set `JD_VERSION` in `src/engine.h` to the new version
+(the info screen and the manual show it), run `make manual`, and update the README's **Latest release**
+line; CI refuses a tag that doesn't match, and a README line that doesn't match `JD_VERSION`.

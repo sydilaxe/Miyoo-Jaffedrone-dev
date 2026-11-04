@@ -73,7 +73,11 @@ install: all
 clean:
 	rm -rf build $(APP)/jaffedrone
 
-.PHONY: all test bench zip install clean
+# the app's version, JD_VERSION in src/engine.h
+version:
+	@sed -n 's/^#define JD_VERSION "\([^"]*\)".*/\1/p' src/engine.h
+
+.PHONY: version all test bench zip install clean
 
 # host-side wifi sync interop check (run alongside HI5's)
 build/jd_synctest: $(SRC) src/main_synctest.c $(HDR)
