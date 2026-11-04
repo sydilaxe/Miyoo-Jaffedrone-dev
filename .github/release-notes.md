@@ -3,6 +3,9 @@ Jaffedrone test build for the Miyoo Mini Plus (OnionOS).
 **Install:** unzip `Jaffedrone-miyoo.zip` at the root of the SD card (it contains `App/Jaffedrone/`),
 then open **Apps → Jaffedrone**.
 
+**New in 0.14.1**
+- The info screen and the manual show the app's real version. Earlier releases said 0.13.
+
 **New in 0.13**
 - **Mono + clock out**, as on HI5: on SONG, set **OUTPUT** to **MONO+CLK** and the sound plays in mono on one
   side of the headphone jack, with clock pulses on the other to lead a Pocket Operator, Volca or other gear.
