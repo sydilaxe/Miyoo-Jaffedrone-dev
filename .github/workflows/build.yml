@@ -104,8 +104,8 @@ jobs:
 
   release:
     name: Publish release
-    # runs for: a pushed v* tag, a release created on the website, or a manual run with a tag filled in
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'release' || inputs.release_tag != ''
+    # runs for: a pushed v* (or V*) tag, a release created on the website, or a manual run with a tag filled in
+    if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/V') || github.event_name == 'release' || inputs.release_tag != ''
     needs: [miyoo, test]
     runs-on: ubuntu-latest
     permissions:
@@ -117,7 +117,7 @@ jobs:
           # the app's info screen and the manual show JD_VERSION; set it to the new version first
           TAG="${{ inputs.release_tag || github.event.release.tag_name || github.ref_name }}"
           v=$(make -s version)
-          test "${TAG#v}" = "$v" ||
+          test "${TAG#[vV]}" = "$v" ||
             { echo "::error::tag $TAG isn't JD_VERSION in src/engine.h ($v): set it, run make manual, update README.md, then tag"; exit 1; }
       - uses: actions/download-artifact@v4
         with:
@@ -133,7 +133,7 @@ jobs:
             gh release create "$TAG" Jaffedrone-miyoo.zip \
               --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" \
-              --title "Jaffedrone $TAG (test build)" \
+              --title "Jaffedrone $TAG" \
               --notes-file .github/release-notes.md \
-              --prerelease
+              --latest
           fi
