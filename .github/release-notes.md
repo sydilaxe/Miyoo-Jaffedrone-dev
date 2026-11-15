@@ -1,4 +1,4 @@
-Jaffedrone test build for the Miyoo Mini Plus (OnionOS).
+Jaffedrone for the Miyoo Mini Plus (OnionOS).
 
 **Install:** unzip `Jaffedrone-miyoo.zip` at the root of the SD card (it contains `App/Jaffedrone/`),
 then open **Apps → Jaffedrone**.
