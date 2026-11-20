@@ -12,6 +12,11 @@ on:
         required: false
         default: ""
 
+# the release tag, when this run publishes one: a pushed v* (or V*) tag, a release created on the
+# website, or a manual run with release_tag filled in (with or without the v)
+env:
+  RELEASE_TAG: ${{ inputs.release_tag || github.event.release.tag_name || ((startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/V')) && github.ref_name) || '' }}
+
 jobs:
   miyoo:
     name: Miyoo Mini Plus package
@@ -104,8 +109,8 @@ jobs:
 
   release:
     name: Publish release
-    # runs for: a pushed v* tag, a release created on the website, or a manual run with a tag filled in
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'release' || inputs.release_tag != ''
+    # runs for: a pushed v* (or V*) tag, a release created on the website, or a manual run with a tag filled in
+    if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/V') || github.event_name == 'release' || inputs.release_tag != ''
     needs: [miyoo, test]
     runs-on: ubuntu-latest
     permissions:
@@ -114,18 +119,21 @@ jobs:
       - uses: actions/checkout@v4
       - name: The tag is the version in the source
         run: |
-          # the app's info screen and the manual show JD_VERSION; set it to the new version first
-          TAG="${{ inputs.release_tag || github.event.release.tag_name || github.ref_name }}"
-          v=$(make -s version)
-          test "${TAG#v}" = "$v" ||
-            { echo "::error::tag $TAG isn't JD_VERSION in src/engine.h ($v): set it, run make manual, update README.md, then tag"; exit 1; }
+          # the app's info screen and the manual show JD_VERSION; set it to the new version first.
+          # A manual run's tag may leave out the v, or be typed V0.15.0.
+          v=$(printf '%s' "$RELEASE_TAG" | tr -d '[:space:]'); v=${v#[vV]}
+          TAG=v$v
+          # a release made on the website keeps its own tag; the package goes onto it
+          if [ "$GITHUB_EVENT_NAME" = release ]; then TAG=$RELEASE_TAG; fi
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          test "$v" = "$(make -s version)" ||
+            { echo "::error::tag $RELEASE_TAG isn't JD_VERSION in src/engine.h ($(make -s version)): set it, run make manual, update README.md, then tag"; exit 1; }
       - uses: actions/download-artifact@v4
         with:
           name: Jaffedrone-miyoo
       - name: Create GitHub release with the Miyoo package
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ inputs.release_tag || github.event.release.tag_name || github.ref_name }}
         run: |
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" Jaffedrone-miyoo.zip --repo "$GITHUB_REPOSITORY" --clobber
@@ -133,7 +141,7 @@ jobs:
             gh release create "$TAG" Jaffedrone-miyoo.zip \
               --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" \
-              --title "Jaffedrone $TAG (test build)" \
+              --title "Jaffedrone $TAG" \
               --notes-file .github/release-notes.md \
-              --prerelease
+              --latest
           fi
